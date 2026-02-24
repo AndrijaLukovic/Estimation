@@ -1,17 +1,14 @@
 import numpy as np
 import math
 
-from lottery import lotteries, one, lotteries_full
+from lotteries import lotteries, one, lotteries_full
 
 
+r, alpha, lamb, gamma, R, desired = 0.97, 0.88, 2.25, 0.61, 0, "lottery_3"
 
-#### Definitions of theoretical functions necessary for a theoretical valuation of a lottery
-# (r, gamma, alpha, lambda)
 
 
 # Probability weighting function
-
-
 
 def pw(p, gamma):
 
@@ -47,7 +44,7 @@ def u(x, R, alpha, lamb):
     else:
 
         return - lamb * ((-x + R) ** alpha)
-
+    
 
 
 # Inverse of the power utility function with loss aversion with respect to a reference point R
@@ -81,15 +78,36 @@ def PV(o, r, R, alpha, lamb):
 
 
 
-def V(L, r, gamma, alpha, lamb, R, pi):
 
+# def dw(l, gamma):
 
-    # TO DO
+#     l = dict(sorted(l.items(), reverse=True))
 
-    return np.dots(pvl, pi).sum()
+#     pi = []
+
+#     x = list(l.keys())
+
+#     p = list(l.values())
+
+#     for i in range(len(x)):
     
+#     return l
 
 
+
+
+
+# Value function, taking the list of present values and the list of physical proababilities as well as all the parameters
+
+def V(pvl, p, r, gamma, alpha, lamb, R):
+
+    assert len(pvl) == len(p), "The present values and the probabilities need to be lists of the same length!"
+
+    w = [pw(i, gamma) for i in p]
+
+    #x = [u(i, R, alpha, lamb) for i in pvl]
+
+    return float(np.dot(pvl, w).sum())
 
 
 
@@ -113,17 +131,17 @@ def transform(lotteries):
 
         o = lottery['periods']
 
-        last = o[3]
+        last = o["3"]
 
-        n = len(o[3])
+        n = len(o["3"])
 
         outcomes = {}
 
         for j in range(n):
 
             p = last[j]['abs_prob']
-
-            stream = {p: [0, int(last[j]['parent'][0] + last[j]['parent'][2:]), int(last[j]['from'][0] + last[j]['from'][2:]), int(last[j]['label'][0] + last[j]['label'][2:])]}
+    
+            stream = {p: [0, int(last[j]["parent"].replace('£', '')) if '£' in last[j]["parent"] else int(last[j]["parent"]), int(last[j]["from"].replace('£', '')) if '£' in last[j]["from"] else int(last[j]["from"]), int(last[j]["label"].replace('£', '')) if '£' in last[j]["label"] else int(last[j]["label"])]}
 
             outcomes[j] = stream
 
@@ -134,8 +152,10 @@ def transform(lotteries):
     return lotteries_v2
 
 
+lotteries_transformed = transform(lotteries_full)
 
-def evaluation(lotteries, r, R, alpha, lamb):
+
+def evaluation(r, R, alpha, lamb, gamma, desired=None, lotteries=transform(lotteries_full)):
     
     lotteries_v2 = {}
 
@@ -155,6 +175,10 @@ def evaluation(lotteries, r, R, alpha, lamb):
 
         b = {}
 
+        pvl = []
+
+        prob = []
+
         for j in n:
 
             path = outcomes[j]
@@ -167,22 +191,36 @@ def evaluation(lotteries, r, R, alpha, lamb):
 
             b[j] = [p, pv_outcome]
 
+            pvl.append(pv_outcome)
+
+            prob.append(p)
+
         a["PV"] = b
+
+        a["V"] = V(pvl,prob, r, gamma, alpha, lamb, R)
+
+        a["present_values_of_streams"] = pvl
+
+        a["probabilities_of_streams"] = prob
 
         lotteries_v2[i] = a
 
+    if desired != None:
+
+        current = lotteries_v2[desired]
+
+        return current["V"]
+
     return lotteries_v2
 
-    
-        
 
-one_transform = transform(one)
+def ce(r, gamma, alpha, lamb, R, desired=desired):
 
-print(one_transform)
+    value = (evaluation(r, R, alpha, lamb, gamma, desired = desired))
 
-print(evaluation(one_transform, 0.97, 0, 0.88, 2.25))
+    return u_inv(value, R, alpha, lamb)
 
 
-t = transform(lotteries)
+print(evaluation(r, R, alpha, lamb, gamma, desired="lottery_14"))
 
-print(evaluation(t, 0.97, 0, 0.88, 2.25))
+print(ce(r, gamma, alpha, lamb, R, desired="lottery_14"))

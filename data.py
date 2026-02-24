@@ -33,4 +33,4 @@ def process():
     return data, data_period1, data_period2, data_period3
 
 
-process()
+data, data_period1, data_period2, data_period3 = process()

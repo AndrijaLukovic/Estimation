@@ -10,16 +10,16 @@ lotteries = {
             'min_payoff': -12,
             'description': 'Example lottery with four final outcomes',
             'periods': {
-                0: [{'label': 'Start', 'probability': 1, 'from': None, 'abs_prob' : 1}],
-                1: [
+                "0": [{'label': 'Start', 'probability': 1, 'from': None, 'abs_prob' : 1}],
+                "1": [
                     {'label': '+£10', 'probability': 0.6, 'from': 'Start', 'abs_prob' : 0.6},
                     {'label': '-£10', 'probability': 0.4, 'from': 'Start', 'abs_prob' : 0.4}
                 ],
-                2: [
+                "2": [
                     {'label': '+£7', 'probability': 1, 'from': '+£10', 'abs_prob' : 0.6},
                     {'label': '-£12', 'probability': 1, 'from': '-£10', 'abs_prob' : 0.4}
                 ],
-                3: [
+                "3": [
                     {'label': '+£8', 'probability': 0.8, 'from': '+£7', 'parent': '+£10', 'abs_prob' : 0.48},
                     {'label': '+£0', 'probability': 0.2, 'from': '+£7', 'parent': '+£10', 'abs_prob' : 0.12},
                     {'label': '+£2', 'probability': 0.5, 'from': '-£12', 'parent': '-£10', 'abs_prob' : 0.2},
@@ -37,17 +37,17 @@ lotteries = {
             'min_payoff': -1245,
             'description': 'Example lottery with four final outcomes',
             'periods': {
-                0: [{'label': 'Start', 'probability': 1, 'from': None, 'abs_prob' : 1}],
-                1: [
+                "0": [{'label': 'Start', 'probability': 1, 'from': None, 'abs_prob' : 1}],
+                "1": [
                     {'label': '+£610', 'probability': 0.7, 'from': 'Start', 'abs_prob' : 0.6},
                     {'label': '+£645', 'probability': 0.3, 'from': 'Start', 'abs_prob' : 0.4}
                 ],
-                2: [
+                "2": [
                     {'label': '-£665', 'probability': 1, 'from': '+£610', 'abs_prob' : 0.6},
                     {'label': '-£895', 'probability': 0.6, 'from': '+£645', 'abs_prob' : 0.4},
                     {'label': '-£800', 'probability': 0.4, 'from': '+£645', 'abs_prob' : 0.4}
                 ],
-                3: [
+                "3": [
                     {'label': '+£865', 'probability': 0.3, 'from': '-£665', 'parent': '+£610', 'abs_prob' : 0.48},
                     {'label': '-£925', 'probability': 0.7, 'from': '-£665', 'parent': '+£610', 'abs_prob' : 0.12},
                     {'label': '+£940', 'probability': 0.6, 'from': '-£895', 'parent': '+£645', 'abs_prob' : 0.2},
@@ -66,16 +66,16 @@ lotteries = {
             'min_payoff': -725,
             'description': 'Example lottery with four final outcomes',
             'periods': {
-                0: [{'label': 'Start', 'probability': 1, 'from': None, 'abs_prob' : 1}],
-                1: [
+                "0": [{'label': 'Start', 'probability': 1, 'from': None, 'abs_prob' : 1}],
+                "1": [
                     {'label': '+£120', 'probability': 0.8, 'from': 'Start', 'abs_prob' : 0.8},
                     {'label': '-£250', 'probability': 0.2, 'from': 'Start', 'abs_prob' : 0.2}
                 ],
-                2: [
+                "2": [
                     {'label': '-£115', 'probability': 1, 'from': '+£120', 'abs_prob' : 0.8},
                     {'label': '+£120', 'probability': 1, 'from': '-£250', 'abs_prob' : 0.2}
                 ],
-                3: [
+                "3": [
                     {'label': '+£210', 'probability': 0.8, 'from': '-£115', 'parent': '+£120', 'abs_prob' : 0.64},
                     {'label': '-£625', 'probability': 0.2, 'from': '-£115', 'parent': '+£120', 'abs_prob' : 0.16},
                     {'label': '-£595', 'probability': 0.5, 'from': '+£120', 'parent': '-£250', 'abs_prob' : 0.1},
@@ -97,16 +97,16 @@ one = {
             'min_payoff': -12,
             'description': 'Example lottery with four final outcomes',
             'periods': {
-                0: [{'label': 'Start', 'probability': 1, 'from': None, 'abs_prob' : 1}],
-                1: [
+                "0": [{'label': 'Start', 'probability': 1, 'from': None, 'abs_prob' : 1}],
+                "1": [
                     {'label': '+£10', 'probability': 0.6, 'from': 'Start', 'abs_prob' : 0.6},
                     {'label': '-£10', 'probability': 0.4, 'from': 'Start', 'abs_prob' : 0.4}
                 ],
-                2: [
+                "2": [
                     {'label': '+£7', 'probability': 1, 'from': '+£10', 'abs_prob' : 0.6},
                     {'label': '-£12', 'probability': 1, 'from': '-£10', 'abs_prob' : 0.4}
                 ],
-                3: [
+                "3": [
                     {'label': '+£8', 'probability': 0.8, 'from': '+£7', 'parent': '+£10', 'abs_prob' : 0.48},
                     {'label': '+£0', 'probability': 0.2, 'from': '+£7', 'parent': '+£10', 'abs_prob' : 0.12},
                     {'label': '+£2', 'probability': 0.5, 'from': '-£12', 'parent': '-£10', 'abs_prob' : 0.2},
@@ -117,14 +117,18 @@ one = {
         }
 
 
+
+
+
+
 lotteries_full = {
-  "lottery_1": {
-    "name": "Apple",
-    "outcome_number": 4,
-    "stake": "lo",
-    "max_payoff": 44,
-    "min_payoff": -46,
-    "description": "n/a",
+                    "lottery_1": {
+                      "name": "Apple",
+                      "outcome_number": 4,
+                      "stake": "lo",
+                      "max_payoff": 44,
+                      "min_payoff": -46,
+                      "description": "n/a",
     "periods": {
       "0": [
         {
