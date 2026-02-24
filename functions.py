@@ -129,6 +129,8 @@ def transform(lotteries):
 
         a['name'] = lottery['name']
 
+        a["spread"] = abs(lottery["max_payoff"] - lottery["min_payoff"])
+
         o = lottery['periods']
 
         last = o["3"]
@@ -219,6 +221,8 @@ def ce(r, gamma, alpha, lamb, R, desired=desired):
     value = (evaluation(r, R, alpha, lamb, gamma, desired = desired))
 
     return u_inv(value, R, alpha, lamb)
+
+
 
 
 print(evaluation(r, R, alpha, lamb, gamma, desired="lottery_14"))
