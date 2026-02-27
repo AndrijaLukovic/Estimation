@@ -106,7 +106,7 @@ def dw(l, gamma):
 
         else:
 
-            pi.append(sum([pw(p[j], gamma) for j in range(i)]) - sum([pw(p[h], gamma) for h in range(i-1)]))
+            pi.append(pw(sum([p[j] for j in range(i)]), gamma) - pw(sum([p[h] for h in range(i-1)]), gamma))
 
         i = i + 1
     
@@ -126,7 +126,14 @@ def dw(l, gamma):
 
         i = i + 1
 
-    return pi
+
+    d = {}
+
+    for i in range(len(pi)):
+
+        d[x[i]] = pi[i]
+
+    return d, pi
 
 print(dw({1:0.15, 2:0.25, 3:0.25, 4:0.25, -1:0.1}, gamma))
 
@@ -139,11 +146,15 @@ def V(pvl, p, r, gamma, alpha, lamb, R):
 
     assert len(pvl) == len(p), "The present values and the probabilities need to be lists of the same length!"
 
-    w = [pw(i, gamma) for i in p]
+    d = {}
 
-    #x = [u(i, R, alpha, lamb) for i in pvl]
+    for i in range(len(pvl)):
 
-    return float(np.dot(pvl, w).sum())
+        d[pvl[i]] = p[i]
+
+    dweights, pi = dw(d, gamma)
+
+    return float(np.dot(pvl, pi).sum())
 
 
 
