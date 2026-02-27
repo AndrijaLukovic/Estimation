@@ -224,7 +224,8 @@ def ce(r, gamma, alpha, lamb, R, desired=desired):
 
 
 
+if __name__ == "__main__":
 
-print(evaluation(r, R, alpha, lamb, gamma, desired="lottery_14"))
+    print(evaluation(r, R, alpha, lamb, gamma, desired="lottery_14"))
 
-print(ce(r, gamma, alpha, lamb, R, desired="lottery_14"))
+    print(ce(r, gamma, alpha, lamb, R, desired="lottery_14"))
