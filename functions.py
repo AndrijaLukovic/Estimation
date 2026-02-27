@@ -4,6 +4,9 @@ import math
 from lotteries import lotteries, one, lotteries_full
 
 
+
+# Some ex ante fixed parameters
+
 r, alpha, lamb, gamma, R, desired = 0.97, 0.88, 2.25, 0.61, 0, "lottery_3"
 
 
@@ -79,20 +82,53 @@ def PV(o, r, R, alpha, lamb):
 
 
 
-# def dw(l, gamma):
 
-#     l = dict(sorted(l.items(), reverse=True))
+# Decision weights (pi) function, takes as arguments l dictionary (keys are present values and values are probabilities) and gamma parameter
 
-#     pi = []
 
-#     x = list(l.keys())
+def dw(l, gamma):
 
-#     p = list(l.values())
+    l = dict(sorted(l.items(), reverse=True))
 
-#     for i in range(len(x)):
+    pi = []
+
+    x = list(l.keys())
+
+    p = list(l.values())
+
+    i = 0
+
+    while x[i] > 0:
+
+        if i == 0:
+
+            pi.append(p[i])
+
+        else:
+
+            pi.append(sum([pw(p[j], gamma) for j in range(i)]) - sum([pw(p[h], gamma) for h in range(i-1)]))
+
+        i = i + 1
     
-#     return l
+        if i >= len(l):
 
+            break
+
+    for i in range(i, len(l)):
+
+        if i == len(l) - 1:
+
+            pi.append(p[i])
+
+        else:
+
+            pi.append(sum([pw(p[j], gamma) for j in range(i, len(l))]) - sum([pw(p[h], gamma) for h in range(i+1, len(l))]))
+
+        i = i + 1
+
+    return pi
+
+print(dw({1:0.15, 2:0.25, 3:0.25, 4:0.25, -1:0.1}, gamma))
 
 
 
@@ -155,6 +191,8 @@ def transform(lotteries):
 
 
 lotteries_transformed = transform(lotteries_full)
+
+print(lotteries_transformed["lottery_1"])
 
 
 def evaluation(r, R, alpha, lamb, gamma, desired=None, lotteries=transform(lotteries_full)):
@@ -226,6 +264,6 @@ def ce(r, gamma, alpha, lamb, R, desired=desired):
 
 if __name__ == "__main__":
 
-    print(evaluation(r, R, alpha, lamb, gamma, desired="lottery_14"))
+    print(evaluation(r, R, alpha, lamb, gamma, desired="lottery_13"))
 
-    print(ce(r, gamma, alpha, lamb, R, desired="lottery_14"))
+    print(ce(r, gamma, alpha, lamb, R, desired="lottery_13"))
