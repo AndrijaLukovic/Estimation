@@ -81,7 +81,7 @@ def run_multistart_mle(obj_func, n_starts=100, param_bounds=None):
     return best_result
 
 
-result = run_multistart_mle(loglikelihood, n_starts=500, param_bounds=bounds)
+result = run_multistart_mle(loglikelihood, n_starts=1000, param_bounds=bounds)
 
 
 
