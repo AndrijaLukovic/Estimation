@@ -10,10 +10,9 @@ from lotteries import lotteries, one, lotteries_full
 r, alpha, lamb, gamma, R, desired = 0.97, 0.88, 2.25, 0.61, 0, "lottery_3"
 
 
-
 # Probability weighting function
 
-def pw(p, gamma):
+def pw(p, gamma=0.61):
 
     if p == 1:
 
@@ -30,15 +29,15 @@ def pw(p, gamma):
 
 # Exponential discounting
 
-def rho(t, r):
+def rho(t, r=0.97):
 
     return math.exp(- r * t)
 
 
 
-# Power utility function with loss aversion with respect to a reference point R
+# Power utility function with loss aversion, with respect to a reference point R
 
-def u(x, R, alpha, lamb):
+def u(x, R=0, alpha=0.88, lamb=2.25):
 
     if x >= R:
 
@@ -52,7 +51,7 @@ def u(x, R, alpha, lamb):
 
 # Inverse of the power utility function with loss aversion with respect to a reference point R
 
-def u_inv(y, R, alpha, lamb):
+def u_inv(y, R=0, alpha=0.88, lamb=2.25):
 
     if y >= 0:
 
@@ -64,11 +63,9 @@ def u_inv(y, R, alpha, lamb):
     
 
 
-# Present value of an outcome stream
+# Present value of an outcome stream, outcome stream is a list
 
-def PV(o, r, R, alpha, lamb):
-
-    # assert isinstance(o, list), "Must be a list!"
+def PV(o, r=0.97, R=0, alpha=0.88, lamb=2.25):
 
     s = 0
 
@@ -81,12 +78,9 @@ def PV(o, r, R, alpha, lamb):
 
 
 
-
-
 # Decision weights (pi) function, takes as arguments l dictionary (keys are present values and values are probabilities) and gamma parameter
 
-
-def dw(l, gamma):
+def dw(l, gamma=0.61):
 
     l = dict(sorted(l.items(), reverse=True))
 
@@ -135,14 +129,14 @@ def dw(l, gamma):
 
     return d, pi
 
-print(dw({1:0.15, 2:0.25, 3:0.25, 4:0.25, -1:0.1}, gamma))
 
+# print(dw({1:0.15, 2:0.25, 3:0.25, 4:0.25, -1:0.1}, gamma))
 
 
 
 # Value function, taking the list of present values and the list of physical proababilities as well as all the parameters
 
-def V(pvl, p, r, gamma, alpha, lamb, R):
+def V(pvl, p, r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0):
 
     assert len(pvl) == len(p), "The present values and the probabilities need to be lists of the same length!"
 
@@ -160,7 +154,7 @@ def V(pvl, p, r, gamma, alpha, lamb, R):
 
 
 # The function takes the original dictionary and returns a dictionary with all the outcome streams for each lottery together with the probabilities of the path
-# The function calculates the present value of each of the lotteries with respect to the exponential time discounting parameter
+# No parametric specification necessary, purely objective probabilities and the lotteries
 
 def transform(lotteries):
 
@@ -203,10 +197,10 @@ def transform(lotteries):
 
 lotteries_transformed = transform(lotteries_full)
 
-print(lotteries_transformed["lottery_1"])
 
 
-def evaluation(r, R, alpha, lamb, gamma, desired=None, lotteries=transform(lotteries_full)):
+
+def evaluation(r=0.97, R=0, alpha=0.88, lamb=2.25, gamma=0.61, lotteries=transform(lotteries_full)):
     
     lotteries_v2 = {}
 
@@ -256,25 +250,46 @@ def evaluation(r, R, alpha, lamb, gamma, desired=None, lotteries=transform(lotte
 
         lotteries_v2[i] = a
 
-    if desired != None:
-
-        current = lotteries_v2[desired]
-
-        return current["V"]
 
     return lotteries_v2
 
 
-def ce(r, gamma, alpha, lamb, R, desired=desired):
 
-    value = (evaluation(r, R, alpha, lamb, gamma, desired = desired))
+# Certainty equivalent given the set of parameters
 
-    return u_inv(value, R, alpha, lamb)
+def ce(r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, desired=desired):
+
+    evaluated_lotteries = evaluation()
+
+    l = evaluated_lotteries[desired]
+
+    v = l["V"]
+
+    return u_inv(v, R, alpha, lamb)
+
+
+
+def ce_dict(r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, lotteries = transform(lotteries_full)):
+
+    ce_d = {}
+
+    l = lotteries.keys()
+
+    for i in l:
+
+        ce_d[i] = ce(r, gamma, alpha, lamb, R, desired=i)
+
+    return ce_d
 
 
 
 if __name__ == "__main__":
 
-    print(evaluation(r, R, alpha, lamb, gamma, desired="lottery_13"))
+    # print(evaluation(r, R, alpha, lamb, gamma))
 
-    print(ce(r, gamma, alpha, lamb, R, desired="lottery_13"))
+    # print(ce(r, gamma, alpha, lamb, R))
+
+
+    # print(list(lotteries_transformed.keys()))
+
+    print(ce_dict())

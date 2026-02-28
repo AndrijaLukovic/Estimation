@@ -15,3 +15,7 @@ y = data_period1[["lottery_id","selected_amount"]].copy()
 if __name__ == "__main__":
 
     print(y[y["lottery_id"] == "lottery_1"]["selected_amount"])
+
+    print(type(y))
+
+    print(y["selected_amount"]+3)
