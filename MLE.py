@@ -53,28 +53,19 @@ def loglikelihood(params, y=y, lotteries = f.transform(one)):
 
 
 
-
-
-
-# print(loglikelihood(params, lotteries=f.transform(one)))
-
-
-bounds = [(1e-6, None)] * 6
+bounds = [(1e-10, 3)] * 6
 
 result = minimize(loglikelihood, x0=[1, 2, 3, 4, 0, 6], bounds=bounds)
 
 
 
-
 def run_multistart_mle(obj_func, n_starts=100, param_bounds=None):
+    
     best_result = None
     best_f = np.inf  # We minimize -LogLikelihood, so look for the lowest value
 
     lower_bounds = np.array([b[0] if b[0] is not None else -2 for b in param_bounds])
     upper_bounds = np.array([b[1] if b[1] is not None else 10 for b in param_bounds])
-
-    print(lower_bounds)
-    print(upper_bounds)
 
     for i in range(n_starts):
 
@@ -90,7 +81,7 @@ def run_multistart_mle(obj_func, n_starts=100, param_bounds=None):
     return best_result
 
 
-result = run_multistart_mle(loglikelihood, n_starts=100, param_bounds=bounds)
+result = run_multistart_mle(loglikelihood, n_starts=500, param_bounds=bounds)
 
 
 
