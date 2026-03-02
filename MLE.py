@@ -22,7 +22,7 @@ params = [0.97, 0.88, 2.25, 0.61, 0, 1]
 
 
 
-def loglikelihood(params, y=y, lotteries = f.transform(one)):
+def loglikelihood(params, y=y, lotteries = f.transform(lotteries_full)): 
 
     r, alpha, lamb, gamma, R, ksi = params
 
@@ -38,14 +38,14 @@ def loglikelihood(params, y=y, lotteries = f.transform(one)):
 
         sigma = ksi*lottery["spread"]
 
-        ce_observed = y[y["lottery_id"] == i]["selected_amount"].copy()
+        ce_observed = y[y["lottery_id"] == i]["selected_amount"].copy() # XG: The observed CE should be the mean of the selected and cutoff amount. now it is just the selected amount.
 
         ce = ce_theoretical[i]
 
         temp = np.array(norm.pdf((ce_observed - ce) / sigma)*(1/sigma))
 
-        x = [np.log(temp[i]) for i in range(len(temp))]
-
+        x = [np.log(temp[i]) for i in range(len(temp))] # XG: This is numerically unstable. We can use norm.logpdf. logpdf returns 0 to avoid underflow when prob is small.
+        #x = norm.logpdf((ce_observed - ce) / sigma, loc=0, scale=sigma)
         s += np.sum(x)
 
     
@@ -53,7 +53,7 @@ def loglikelihood(params, y=y, lotteries = f.transform(one)):
 
 
 
-bounds = [(1e-10, 3)] * 6
+bounds = [(1e-10, 3)] * 6 #XG: Why 3? We can also set the upper bound to be None, which means no upper bound.
 
 result = minimize(loglikelihood, x0=[1, 2, 3, 4, 0, 6], bounds=bounds)
 

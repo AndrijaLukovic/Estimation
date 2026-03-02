@@ -48,12 +48,12 @@ lotteries = {
                     {'label': '-£800', 'probability': 0.4, 'from': '+£645', 'abs_prob' : 0.4}
                 ],
                 "3": [
-                    {'label': '+£865', 'probability': 0.3, 'from': '-£665', 'parent': '+£610', 'abs_prob' : 0.48},
-                    {'label': '-£925', 'probability': 0.7, 'from': '-£665', 'parent': '+£610', 'abs_prob' : 0.12},
-                    {'label': '+£940', 'probability': 0.6, 'from': '-£895', 'parent': '+£645', 'abs_prob' : 0.2},
-                    {'label': '-£995', 'probability': 0.4, 'from': '-£895', 'parent': '+£645', 'abs_prob' : 0.2},
-                    {'label': '-£860', 'probability': 0.6, 'from': '-£800', 'parent': '+£645', 'abs_prob' : 0.2},
-                    {'label': '+£980', 'probability': 0.4, 'from': '-£800', 'parent': '+£645', 'abs_prob' : 0.2}
+                    {'label': '+£865', 'probability': 0.3, 'from': '-£665', 'parent': '+£610', 'abs_prob' : 0.21},
+                    {'label': '-£925', 'probability': 0.7, 'from': '-£665', 'parent': '+£610', 'abs_prob' : 0.49},
+                    {'label': '+£940', 'probability': 0.6, 'from': '-£895', 'parent': '+£645', 'abs_prob' : 0.108},
+                    {'label': '-£995', 'probability': 0.4, 'from': '-£895', 'parent': '+£645', 'abs_prob' : 0.072},
+                    {'label': '-£860', 'probability': 0.6, 'from': '-£800', 'parent': '+£645', 'abs_prob' : 0.072},
+                    {'label': '+£980', 'probability': 0.4, 'from': '-£800', 'parent': '+£645', 'abs_prob' : 0.048}
                 ]
             }
         },

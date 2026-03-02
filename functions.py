@@ -45,16 +45,16 @@ def u(x, R=0, alpha=0.88, lamb=2.25):
 
     else:
 
-        return - lamb * ((-x + R) ** alpha)
+        return - lamb * ((-x + R) ** alpha) 
     
 
 
 # Inverse of the power utility function with loss aversion with respect to a reference point R
 
-def u_inv(y, R=0, alpha=0.88, lamb=2.25):
+# XG: This always creates overflow when the input is large. In general, we can let the returned value to be float64. Also, kick the small alpha away
+def u_inv(y, R=0, alpha=0.88, lamb=2.25): #for example here, do def u_inv(y, R=0, alpha=0.88, lamb=2.25) -> int64
 
     if y >= 0:
-
         return y ** (1/(alpha)) + R
 
     if y < 0:
@@ -96,7 +96,7 @@ def dw(l, gamma=0.61):
 
         if i == 0:
 
-            pi.append(p[i])
+            pi.append(p[i]) # XG: This is incorrect. Why the first term is not weighted?
 
         else:
 
@@ -112,11 +112,11 @@ def dw(l, gamma=0.61):
 
         if i == len(l) - 1:
 
-            pi.append(p[i])
+            pi.append(p[i]) # XG: Also incorrect. Weight the last term.
 
         else:
 
-            pi.append(sum([pw(p[j], gamma) for j in range(i, len(l))]) - sum([pw(p[h], gamma) for h in range(i+1, len(l))]))
+            pi.append(sum([pw(p[j], gamma) for j in range(i, len(l))]) - sum([pw(p[h], gamma) for h in range(i+1, len(l))])) #XG: This is incorrect. It should be pw(sum) instead of sum(pw)
 
         i = i + 1
 
@@ -144,11 +144,21 @@ def V(pvl, p, r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0):
 
     for i in range(len(pvl)):
 
-        d[pvl[i]] = p[i]
+        d[pvl[i]] = p[i] #XG: The dictionary logic is: if you have two identical entries, this dictionary will only keep the first one. So we may lose some branches if there are two identical present values.
+
+
+        """
+        from collections import defaultdict
+
+        d = defaultdict(float)
+        for x_i, p_i in zip(pvl, p):
+            d[x_i] += p_i
+        """
+
 
     dweights, pi = dw(d, gamma)
 
-    return float(np.dot(pvl, pi).sum())
+    return float(np.dot(pvl, pi).sum())  #XG: Is pvl ordered from the biggest to the smallest? (as of pi) Otherwise, we cannot just multiply them together and sum them up. We need to make sure the order is the same.
 
 
 
@@ -259,7 +269,7 @@ def evaluation(r=0.97, R=0, alpha=0.88, lamb=2.25, gamma=0.61, lotteries=transfo
 
 def ce(r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, desired=desired):
 
-    evaluated_lotteries = evaluation()
+    evaluated_lotteries = evaluation() #XG: I would recommend to call parameter once only, and let a=a for the rest. In this case, when we change parameters, we only change one line of code. Otherwise, we may need to change the parameters in multiple places.. Maybe do this: evaluated_lotteries = evaluation(r, R, alpha, lamb, gamma)
 
     l = evaluated_lotteries[desired]
 
