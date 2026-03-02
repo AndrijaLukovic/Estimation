@@ -4,7 +4,7 @@ from scipy.optimize import minimize
 from scipy.stats import norm
 
 import functions as f
-from lotteries import lotteries_full
+from lotteries import lotteries_full, one
 from main import get_observed_ce
 
 
@@ -12,8 +12,25 @@ from main import get_observed_ce
 params = [0.97, 0.88, 2.25, 0.61, 0, 1]
 
 # Keep your original bounds for now (not changed in this patch request).
-bounds = [(1e-10, 3)] * 6
+#bounds = [(1e-10, 3)] * 6
 
+
+bounds = [
+    (1e-4, 3.0),    # r
+    (0.2, 2),     # alpha  <-- too little alpha cause underflow
+    (1e-3, 6.0),    # lamb
+    (0.2, 1.5),     # gamma
+    (-100,100),  # R
+    (1e-3, 3.0),    # ksi
+]
+
+
+# Iteration time
+n_starts = 1000
+lottery = lotteries_full
+
+# random setup
+np.random.seed(100)
 
 def loglikelihood(params, y=None, lotteries=None):
     """Negative log-likelihood under Normal errors around CPT-implied CE."""
@@ -21,7 +38,7 @@ def loglikelihood(params, y=None, lotteries=None):
         # Lazy-load observed CE so importing this module has no heavy side effects.
         y = get_observed_ce(export_excel=False)
     if lotteries is None:
-        lotteries = f.transform(lotteries_full)
+        lotteries = f.transform(lottery)
 
     r, alpha, lamb, gamma, R, ksi = params
     ce_theoretical = f.ce_dict(r, gamma, alpha, lamb, R, lotteries=lotteries)
@@ -37,7 +54,7 @@ def loglikelihood(params, y=None, lotteries=None):
     return -float(s)
 
 
-def run_multistart_mle(obj_func, n_starts=100, param_bounds=None):
+def run_multistart_mle(obj_func, n_starts=n_starts, param_bounds=None):
     """Run bounded multistart optimization and return the best successful result."""
     best_result = None
     best_f = np.inf  # We minimize -LogLikelihood, so smaller is better.
@@ -54,7 +71,6 @@ def run_multistart_mle(obj_func, n_starts=100, param_bounds=None):
             x0=random_guess,
             bounds=param_bounds,
             method="L-BFGS-B",
-            options={"maxiter": 100000},
         )
 
         if res.success and res.fun < best_f:
@@ -66,12 +82,12 @@ def run_multistart_mle(obj_func, n_starts=100, param_bounds=None):
     return best_result
 
 
-def estimate_mle(n_starts=1000, param_bounds=bounds, y=None, lotteries=None):
+def estimate_mle(n_starts=n_starts, param_bounds=bounds, y=None, lotteries=None):
     """Estimate parameters with multistart MLE and fail loudly if nothing converged."""
     if y is None:
         y = get_observed_ce(export_excel=False)
     if lotteries is None:
-        lotteries = f.transform(lotteries_full)
+        lotteries = f.transform(lottery)
 
     # Bind data/lotteries once so each optimizer call only varies parameters.
     def objective(theta):
@@ -84,7 +100,6 @@ def estimate_mle(n_starts=1000, param_bounds=bounds, y=None, lotteries=None):
 
 
 def format_results(result):
-    """Return a clean estimate table."""
     param_names = ["r", "Alpha", "Lambda", "Gamma", "R", "ksi"]
     return pd.DataFrame(
         {"Parameter": pd.Series(param_names), "Estimate": pd.Series(result.x)}
@@ -92,7 +107,7 @@ def format_results(result):
 
 
 if __name__ == "__main__":
-    result = estimate_mle(n_starts=1000, param_bounds=bounds)
+    result = estimate_mle(n_starts=n_starts, param_bounds=bounds)
     results_df = format_results(result)
 
     print("\nMAXIMUM LIKELIHOOD ESTIMATES")
