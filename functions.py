@@ -144,16 +144,15 @@ def V(pvl, p, r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0):
 
     for i in range(len(pvl)):
 
-        d[pvl[i]] = p[i] #XG: The dictionary logic is: if you have two identical entries, this dictionary will only keep the first one. So we may lose some branches if there are two identical present values.
+        """d[pvl[i]] = p[i] #XG: The dictionary logic is: if you have two identical entries, this dictionary will only keep the first one. So we may lose some branches if there are two identical present values."""
 
 
-        """
         from collections import defaultdict
 
         d = defaultdict(float)
         for x_i, p_i in zip(pvl, p):
             d[x_i] += p_i
-        """
+
 
 
     dweights, pi = dw(d, gamma)

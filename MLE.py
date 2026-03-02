@@ -50,7 +50,7 @@ def loglikelihood(params, y=y, lotteries = f.transform(lotteries_full)):
 
 
 
-bounds = [(1e-10, None)] * 6 #XG: Why 3? We can also set the upper bound to be None, which means no upper bound.
+bounds = [(1e-10, 3)] * 6 #XG: Why 3? We can also set the upper bound to be None, which means no upper bound.
 
 result = minimize(loglikelihood, x0=[1, 2, 0, 0, 0, 3], bounds=bounds)
 
