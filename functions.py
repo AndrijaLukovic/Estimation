@@ -1,5 +1,6 @@
 import numpy as np
 import math
+from collections import defaultdict
 
 from lotteries import lotteries, one, lotteries_full
 
@@ -140,24 +141,19 @@ def V(pvl, p, r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0):
 
     assert len(pvl) == len(p), "The present values and the probabilities need to be lists of the same length!"
 
-    d = {}
+    # Merge duplicate outcomes before weighting (CPT requires ranking unique outcomes).
+    # This also avoids shape mismatches when identical outcomes exist in multiple branches.
+    d = defaultdict(float)
+    for x_i, p_i in zip(pvl, p):
+        d[x_i] += p_i
 
-    for i in range(len(pvl)):
+    # dw(...) returns weights ordered by sorted outcomes, so we must dot with the
+    # same ordered outcome vector (not the original unsorted/duplicated pvl list).
+    dweights, _ = dw(d, gamma)
+    ranked_outcomes = np.array(list(dweights.keys()), dtype=float)
+    ranked_weights = np.array(list(dweights.values()), dtype=float)
 
-        """d[pvl[i]] = p[i] #XG: The dictionary logic is: if you have two identical entries, this dictionary will only keep the first one. So we may lose some branches if there are two identical present values."""
-
-
-        from collections import defaultdict
-
-        d = defaultdict(float)
-        for x_i, p_i in zip(pvl, p):
-            d[x_i] += p_i
-
-
-
-    dweights, pi = dw(d, gamma)
-
-    return float(np.dot(pvl, pi).sum())  #XG: Is pvl ordered from the biggest to the smallest? (as of pi) Otherwise, we cannot just multiply them together and sum them up. We need to make sure the order is the same.
+    return float(np.dot(ranked_outcomes, ranked_weights))
 
 
 
@@ -266,9 +262,10 @@ def evaluation(r=0.97, R=0, alpha=0.88, lamb=2.25, gamma=0.61, lotteries=transfo
 
 # Certainty equivalent given the set of parameters
 
-def ce(r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, desired=desired):
+def ce(r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, desired=desired, lotteries=transform(lotteries_full)):
 
-    evaluated_lotteries = evaluation() #XG: I would recommend to call parameter once only, and let a=a for the rest. In this case, when we change parameters, we only change one line of code. Otherwise, we may need to change the parameters in multiple places.. Maybe do this: evaluated_lotteries = evaluation(r, R, alpha, lamb, gamma)
+    # Pass through all parameters so CE is computed at the current candidate point.
+    evaluated_lotteries = evaluation(r=r, R=R, alpha=alpha, lamb=lamb, gamma=gamma, lotteries=lotteries)
 
     l = evaluated_lotteries[desired]
 
@@ -286,7 +283,7 @@ def ce_dict(r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, lotteries = transfor
 
     for i in l:
 
-        ce_d[i] = ce(r, gamma, alpha, lamb, R, desired=i)
+        ce_d[i] = ce(r, gamma, alpha, lamb, R, desired=i, lotteries=lotteries)
 
     return ce_d
 

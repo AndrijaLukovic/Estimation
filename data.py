@@ -7,7 +7,23 @@ to_drop = ["session_code", "participant_code", "participant_label", "lottery_sta
         'chf_9', 'chf_10', 'chf_11', 'chf_12', 'chf_13', 'chf_14', 'chf_15', 'chf_16', 'chf_17', 'chf_18', 'chf_19', 'chf_20', "selected_option"]
 
 
-def process():
+def _export_excel_safely(data, data_period1, data_period2, data_period3, excel_path):
+    """XG: Write debug/export sheets when openpyxl is available, otherwise skip gracefully."""
+    try:
+        import openpyxl  # noqa: F401
+    except ModuleNotFoundError:
+        print("openpyxl is not installed; skipping Excel export.")
+        return
+
+    data.to_excel(excel_path, sheet_name="v1", index=False)
+    with pd.ExcelWriter(excel_path, mode="a", if_sheet_exists="replace") as writer:
+        data.to_excel(writer, sheet_name="v2", index=False)
+        data_period1.to_excel(writer, sheet_name="period1", index=False)
+        data_period2.to_excel(writer, sheet_name="period2", index=False)
+        data_period3.to_excel(writer, sheet_name="period3", index=False)
+
+
+def process(export_excel=False, excel_path="pilot.xlsx"):
 # XG: i will updeate this function so that: (1) it returns the average of the selected and cutoff, (2) it returns the refined choice, if there is one.
     data = pd.read_csv("pilot.csv")
 
@@ -32,21 +48,13 @@ def process():
     if {"selected_amount_effective", "cutoff_amount_effective"}.issubset(data.columns):
         data["ce_observed"] = data[["selected_amount_effective", "cutoff_amount_effective"]].mean(axis=1)
 
-    data.to_excel("pilot.xlsx", sheet_name="v1")
-
     data.drop(to_drop, inplace=True, axis=1, errors="ignore")
 
     data_period1,  data_period2, data_period3 = data[data["round_number"] < 15], data[data["round_number"] == 15], data[data["round_number"] == 16]
 
-
-    with pd.ExcelWriter("pilot.xlsx", mode="a") as writer:
-        data.to_excel(writer, sheet_name="v2")
-
-        data_period1.to_excel(writer, sheet_name="period1")
-
-        data_period2.to_excel(writer, sheet_name="period2")
-
-        data_period3.to_excel(writer, sheet_name="period3")
+    # Keep exports optional so data processing works in environments without openpyxl.
+    if export_excel:
+        _export_excel_safely(data, data_period1, data_period2, data_period3, excel_path)
 
 
     return data, data_period1, data_period2, data_period3
@@ -54,6 +62,6 @@ def process():
 
 if __name__ == "__main__":
 
-    data, data_period1, data_period2, data_period3 = process()
+    data, data_period1, data_period2, data_period3 = process(export_excel=True)
 
 
