@@ -1,7 +1,4 @@
-<<<<<<< Updated upstream
 **/venv/
+**/.venv/
 pilot.csv
 pilot.xlsx
-=======
-**/venv/
->>>>>>> Stashed changes
