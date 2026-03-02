@@ -38,14 +38,11 @@ def loglikelihood(params, y=y, lotteries = f.transform(lotteries_full)):
 
         sigma = ksi*lottery["spread"]
 
-        ce_observed = y[y["lottery_id"] == i]["selected_amount"].copy() # XG: The observed CE should be the mean of the selected and cutoff amount. now it is just the selected amount.
+        ce_observed = y[y["lottery_id"] == i]["ce_observed"].copy()
 
         ce = ce_theoretical[i]
 
-        temp = np.array(norm.pdf((ce_observed - ce) / sigma)*(1/sigma))
-
-        x = [np.log(temp[i]) for i in range(len(temp))] # XG: This is numerically unstable. We can use norm.logpdf. logpdf returns 0 to avoid underflow when prob is small.
-        #x = norm.logpdf((ce_observed - ce) / sigma, loc=0, scale=sigma)
+        x = norm.logpdf(ce_observed, loc=ce, scale=sigma) # [solved] XG: This is numerically unstable. We can use norm.logpdf. logpdf returns 0 to avoid underflow when prob is small.
         s += np.sum(x)
 
     
@@ -53,9 +50,9 @@ def loglikelihood(params, y=y, lotteries = f.transform(lotteries_full)):
 
 
 
-bounds = [(1e-10, 3)] * 6 #XG: Why 3? We can also set the upper bound to be None, which means no upper bound.
+bounds = [(1e-10, None)] * 6 #XG: Why 3? We can also set the upper bound to be None, which means no upper bound.
 
-result = minimize(loglikelihood, x0=[1, 2, 3, 4, 0, 6], bounds=bounds)
+result = minimize(loglikelihood, x0=[1, 2, 0, 0, 0, 3], bounds=bounds)
 
 
 
@@ -71,7 +68,7 @@ def run_multistart_mle(obj_func, n_starts=100, param_bounds=None):
 
         random_guess = np.random.uniform(lower_bounds, upper_bounds)
         
-        res = minimize(obj_func, x0=random_guess, bounds=param_bounds, method='L-BFGS-B')
+        res = minimize(obj_func, x0=random_guess, bounds=param_bounds, method='L-BFGS-B', options={'maxiter': 100000})
         
         if res.success and res.fun < best_f:
             best_f = res.fun

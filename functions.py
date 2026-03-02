@@ -96,7 +96,7 @@ def dw(l, gamma=0.61):
 
         if i == 0:
 
-            pi.append(p[i]) # XG: This is incorrect. Why the first term is not weighted?
+            pi.append(pw(p[i], gamma)) # XG: This is incorrect. Why the first term is not weighted?
 
         else:
 
@@ -112,11 +112,11 @@ def dw(l, gamma=0.61):
 
         if i == len(l) - 1:
 
-            pi.append(p[i]) # XG: Also incorrect. Weight the last term.
+            pi.append(pw(p[i], gamma)) # XG: Also incorrect. Weight the last term.
 
         else:
 
-            pi.append(sum([pw(p[j], gamma) for j in range(i, len(l))]) - sum([pw(p[h], gamma) for h in range(i+1, len(l))])) #XG: This is incorrect. It should be pw(sum) instead of sum(pw)
+            pi.append(pw(sum([p[j] for j in range(i, len(l))]), gamma) - pw(sum([p[h] for h in range(i+1, len(l))]), gamma)) #XG: This is incorrect. It should be pw(sum) instead of sum(pw)
 
         i = i + 1
 
