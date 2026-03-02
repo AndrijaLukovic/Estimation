@@ -30,7 +30,7 @@ n_starts = 1000
 lottery = lotteries_full
 
 # random setup
-np.random.seed(100)
+np.random.seed(5)
 
 def loglikelihood(params, y=None, lotteries=None):
     """Negative log-likelihood under Normal errors around CPT-implied CE."""
@@ -112,3 +112,4 @@ if __name__ == "__main__":
 
     print("\nMAXIMUM LIKELIHOOD ESTIMATES")
     print(results_df.to_string(index=False))
+    print(f"Best Log-Likelihood: {-result.fun:.4f}")
