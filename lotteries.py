@@ -39,13 +39,13 @@ lotteries = {
             'periods': {
                 "0": [{'label': 'Start', 'probability': 1, 'from': None, 'abs_prob' : 1}],
                 "1": [
-                    {'label': '+£610', 'probability': 0.7, 'from': 'Start', 'abs_prob' : 0.6},
-                    {'label': '+£645', 'probability': 0.3, 'from': 'Start', 'abs_prob' : 0.4}
+                    {'label': '+£610', 'probability': 0.7, 'from': 'Start', 'abs_prob' : 0.7},
+                    {'label': '+£645', 'probability': 0.3, 'from': 'Start', 'abs_prob' : 0.3}
                 ],
                 "2": [
-                    {'label': '-£665', 'probability': 1, 'from': '+£610', 'abs_prob' : 0.6},
-                    {'label': '-£895', 'probability': 0.6, 'from': '+£645', 'abs_prob' : 0.4},
-                    {'label': '-£800', 'probability': 0.4, 'from': '+£645', 'abs_prob' : 0.4}
+                    {'label': '-£665', 'probability': 1, 'from': '+£610', 'abs_prob' : 0.7},
+                    {'label': '-£895', 'probability': 0.6, 'from': '+£645', 'abs_prob' : 0.18},
+                    {'label': '-£800', 'probability': 0.4, 'from': '+£645', 'abs_prob' : 0.12}
                 ],
                 "3": [
                     {'label': '+£865', 'probability': 0.3, 'from': '-£665', 'parent': '+£610', 'abs_prob' : 0.21},

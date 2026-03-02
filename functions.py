@@ -97,11 +97,11 @@ def dw(l, gamma=0.61):
 
         if i == 0:
 
-            pi.append(pw(p[i], gamma)) # XG: This is incorrect. Why the first term is not weighted?
+            pi.append(pw(p[i], gamma))
 
         else:
 
-            pi.append(pw(sum([p[j] for j in range(i)]), gamma) - pw(sum([p[h] for h in range(i-1)]), gamma))
+            pi.append(pw(sum([p[j] for j in range(i+1)]), gamma) - pw(sum([p[h] for h in range(i)]), gamma))
 
         i = i + 1
     
@@ -277,15 +277,9 @@ def ce(r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, desired=desired, lotterie
 
 def ce_dict(r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, lotteries = transform(lotteries_full)):
 
-    ce_d = {}
+    evaluated_lotteries = evaluation(r=r, R=R, alpha=alpha, lamb=lamb, gamma=gamma, lotteries=lotteries)
 
-    l = lotteries.keys()
-
-    for i in l:
-
-        ce_d[i] = ce(r, gamma, alpha, lamb, R, desired=i, lotteries=lotteries)
-
-    return ce_d
+    return {i: u_inv(evaluated_lotteries[i]["V"], R, alpha, lamb) for i in lotteries}
 
 
 
