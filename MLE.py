@@ -6,7 +6,7 @@ from scipy.stats import norm
 import functions as f
 from lotteries import lotteries_full, one
 from main import get_observed_ce
-
+import openpyxl
 
 # r, alpha, lamb, gamma, R, ksi
 params = [0.97, 0.88, 2.25, 0.61, 0, 1]

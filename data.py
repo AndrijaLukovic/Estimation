@@ -1,5 +1,5 @@
 import pandas as pd
-
+import openpyxl
 
 to_drop = ["session_code", "participant_code", "participant_label", "lottery_stake", "num_failed_attempts", "failed_too_many_1", "failed_too_many_2", 
         "failed_too_many_3", "quiz1", "quiz2", "quiz3", "quiz4", "quiz5", "quiz6", "quiz7", "quiz8", "participant_time_started_utc", "session2_start",
@@ -9,11 +9,6 @@ to_drop = ["session_code", "participant_code", "participant_label", "lottery_sta
 
 def _export_excel_safely(data, data_period1, data_period2, data_period3, excel_path):
     """XG: Write debug/export sheets when openpyxl is available, otherwise skip gracefully."""
-    try:
-        import openpyxl  # noqa: F401
-    except ModuleNotFoundError:
-        print("openpyxl is not installed; skipping Excel export.")
-        return
 
     data.to_excel(excel_path, sheet_name="v1", index=False)
     with pd.ExcelWriter(excel_path, mode="a", if_sheet_exists="replace") as writer:
