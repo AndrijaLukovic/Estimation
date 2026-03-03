@@ -22,40 +22,45 @@ bounds = [
 
 
 # Iteration time
-n_starts = 1000
+n_starts = 100
 lottery = lotteries_full
 
 # random setup
-np.random.seed(5)
+np.random.seed(10)
 
 def loglikelihood(params, y=None, lotteries=None, subjects=None):
     """
-    Negative log-likelihood with one explicit ksi_i per subject.
+    Negative log-likelihood with individual error terms.
 
     params = [r, alpha, lamb, gamma, R, ksi_1, ksi_2, ..., ksi_N]
 
     subjects is the ordered list of participant_label values that maps
-    params[5], params[6], ... to individual subjects. estimate_mle constructs
-    and passes this list so the ordering is consistent across all optimizer calls.
+    params[5], params[6], ... to individual subjects.
+
     """
+    # Get data ready
     if y is None:
         y = get_observed_ce(export_excel=False)
     if lotteries is None:
         lotteries = f.transform(lottery)
     if subjects is None:
         subjects = sorted(y["participant_label"].unique())
-
+    # Setup systematic parameters
     r, alpha, lamb, gamma, R = params[:5]
+    # Setup individual error terms
     ksi_map = {subj: params[5 + i] for i, subj in enumerate(subjects)} # Create a mapping from participant_label to their corresponding ksi_i value from the params vector.
 
+    # Compute the theoretical CE
     ce_theoretical = f.ce_dict(r, gamma, alpha, lamb, R, lotteries=lotteries)
-    spreads = {lid: lotteries[lid]["spread"] for lid in lotteries}
 
+    # Map the specification of ksi
+    spreads = {lid: lotteries[lid]["spread"] for lid in lotteries}
     y = y.copy()
     y["ce_th"] = y["lottery_id"].map(ce_theoretical)
     y["spread"] = y["lottery_id"].map(spreads)
     y["sigma"] = y["participant_label"].map(ksi_map) * y["spread"]
 
+    # Compute the loglik for each observation and return the negative sum for minimization.
     log_lik = norm.logpdf(y["ce_observed"], loc=y["ce_th"], scale=y["sigma"])
     return -float(log_lik.sum())
 
@@ -63,6 +68,7 @@ def loglikelihood(params, y=None, lotteries=None, subjects=None):
 def run_multistart_mle(obj_func, n_starts=n_starts, param_bounds=None):
     """
     Run bounded multistart optimization and return the best successful result.
+
     """
     best_result = None
     best_f = np.inf  # We minimize -LogLikelihood, so smaller is better.
@@ -72,7 +78,7 @@ def run_multistart_mle(obj_func, n_starts=n_starts, param_bounds=None):
 
     for i in range(n_starts):
         print(f"Run {i + 1}/{n_starts}...", end="\r", flush=True)
-        random_guess = np.random.uniform(lower_bounds, upper_bounds) # A random starting guess within bounds for each parameter
+        random_guess = np.random.uniform(lower_bounds, upper_bounds)
 
         res = minimize(
             obj_func,
@@ -81,7 +87,7 @@ def run_multistart_mle(obj_func, n_starts=n_starts, param_bounds=None):
             method="L-BFGS-B",
         ) #scipy minimize with L-BFGS-B method for bounded optimization
 
-        if res.success and res.fun < best_f:
+        if res.fun < best_f:
             best_f = res.fun
             best_result = res
             print(f"\nRun {i + 1}: New best Log-Likelihood found: {-res.fun:.4f}")
@@ -105,7 +111,7 @@ def estimate_mle(n_starts=n_starts, param_bounds=bounds, y=None, lotteries=None)
         lotteries = f.transform(lottery)
 
     subjects = sorted(y["participant_label"].unique())
-    full_bounds = list(param_bounds) + [(1e-3, 3.0)] * len(subjects)
+    full_bounds = list(param_bounds) + [(1e-3, 3.0)] * len(subjects) # bounds for structural parameters + bounds for individual error terms
 
     def objective(theta):
         return loglikelihood(theta, y=y, lotteries=lotteries, subjects=subjects)
