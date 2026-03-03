@@ -1,7 +1,7 @@
 import pandas as pd
 import openpyxl
 
-to_drop = ["session_code", "participant_code", "participant_label", "lottery_stake", "num_failed_attempts", "failed_too_many_1", "failed_too_many_2", 
+to_drop = ["session_code", "participant_code", "lottery_stake", "num_failed_attempts", "failed_too_many_1", "failed_too_many_2", 
         "failed_too_many_3", "quiz1", "quiz2", "quiz3", "quiz4", "quiz5", "quiz6", "quiz7", "quiz8", "participant_time_started_utc", "session2_start",
         "session2_start_readable", "session3_start", "session3_start_readable", "chf_1", "chf_2", "chf_3", "chf_4", 'chf_5', 'chf_6', 'chf_7', 'chf_8',
         'chf_9', 'chf_10', 'chf_11', 'chf_12', 'chf_13', 'chf_14', 'chf_15', 'chf_16', 'chf_17', 'chf_18', 'chf_19', 'chf_20', "selected_option"]

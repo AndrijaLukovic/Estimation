@@ -12,12 +12,12 @@ def get_observed_ce(export_excel=False):
     data, data_period1, data_period2, data_period3 = process(export_excel=export_excel)
 
     if "ce_observed" in data_period1.columns:
-        y = data_period1[["lottery_id", "ce_observed"]].copy()
+        y = data_period1[["participant_label", "lottery_id", "ce_observed"]].copy()
     elif {"selected_amount", "cutoff_amount"}.issubset(data_period1.columns):
-        y = data_period1[["lottery_id"]].copy()
+        y = data_period1[["participant_label", "lottery_id"]].copy()
         y["ce_observed"] = data_period1[["selected_amount", "cutoff_amount"]].mean(axis=1)
     else:
-        y = data_period1[["lottery_id", "selected_amount"]].copy()
+        y = data_period1[["participant_label", "lottery_id", "selected_amount"]].copy()
         y.rename(columns={"selected_amount": "ce_observed"}, inplace=True)
 
     return y

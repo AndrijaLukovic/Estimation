@@ -1,27 +1,22 @@
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
-from scipy.stats import norm
 
 import functions as f
 from lotteries import lotteries_full, one
 from main import get_observed_ce
 import openpyxl
 
-# r, alpha, lamb, gamma, R, ksi
-params = [0.97, 0.88, 2.25, 0.61, 0, 1]
-
-# Keep your original bounds for now (not changed in this patch request).
-#bounds = [(1e-10, 3)] * 6
-
+# r, alpha, lamb, gamma, R
+params = [0.97, 0.88, 2.25, 0.61, 0]
 
 bounds = [
     (1e-4, 3.0),    # r
-    (0.2, 2),     # alpha  <-- too little alpha cause underflow
+    (0.2, 2),       # alpha  <-- too little alpha causes underflow
     (1e-3, 6.0),    # lamb
     (0.2, 1.5),     # gamma
-    (-100,100),  # R
-    (1e-3, 3.0),    # ksi
+    (-100, 100),    # R
+    # ksi removed: profiled out analytically per subject
 ]
 
 
@@ -34,26 +29,42 @@ np.random.seed(5)
 
 def loglikelihood(params, y=None, lotteries=None):
     """
-    Negative log-likelihood under Normal errors around CPT-implied CE.
+    Concentrated negative log-likelihood with per-subject ksi profiled out analytically.
+
+    For each subject i with J_i lottery responses, the MLE of ksi_i at fixed CPT
+    parameters theta is:
+        ksi_hat_i = sqrt( S_i / J_i )
+        where S_i = sum_j [ (ce_obs[i,j] - ce_th[j])^2 / spread[j]^2 ]
+
+    Substituting ksi_hat_i back gives the concentrated objective:
+        min_theta  sum_i  J_i * log(S_i(theta))
+
+    ksi_i is never in the optimizer; it can be recovered post-estimation.
     """
     if y is None:
-        # Lazy-load observed CE so importing this module has no heavy side effects.
         y = get_observed_ce(export_excel=False)
     if lotteries is None:
         lotteries = f.transform(lottery)
 
-    r, alpha, lamb, gamma, R, ksi = params
+    r, alpha, lamb, gamma, R = params
     ce_theoretical = f.ce_dict(r, gamma, alpha, lamb, R, lotteries=lotteries)
 
-    s = 0.0
-    for lottery_id, lottery in lotteries.items():
-        sigma = ksi * lottery["spread"] # The ksi should be individual level to subject, now this is pooled across lotteries
-        ce_observed = y.loc[y["lottery_id"] == lottery_id, "ce_observed"]
-        ce = ce_theoretical[lottery_id]
-        x = norm.logpdf(ce_observed, loc=ce, scale=sigma)
-        s += np.sum(x)
+    spreads = {lid: lotteries[lid]["spread"] for lid in lotteries}
 
-    return -float(s)
+    y = y.copy()
+    y["ce_th"] = y["lottery_id"].map(ce_theoretical)
+    y["spread"] = y["lottery_id"].map(spreads)
+    y["std_resid_sq"] = ((y["ce_observed"] - y["ce_th"]) / y["spread"]) ** 2
+
+    s = 0.0
+    for _, group in y.groupby("participant_label"):
+        J_i = len(group)
+        S_i = group["std_resid_sq"].sum()
+        if S_i <= 0:
+            return np.inf
+        s += J_i * np.log(S_i)
+
+    return float(s)
 
 
 def run_multistart_mle(obj_func, n_starts=n_starts, param_bounds=None):
@@ -106,7 +117,7 @@ def estimate_mle(n_starts=n_starts, param_bounds=bounds, y=None, lotteries=None)
 
 
 def format_results(result):
-    param_names = ["r", "Alpha", "Lambda", "Gamma", "R", "ksi"]
+    param_names = ["r", "Alpha", "Lambda", "Gamma", "R"]
     return pd.DataFrame(
         {"Parameter": pd.Series(param_names), "Estimate": pd.Series(result.x)}
     )
