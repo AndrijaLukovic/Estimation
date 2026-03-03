@@ -52,8 +52,11 @@ def u(x, R=0, alpha=0.88, lamb=2.25):
 
 # Inverse of the power utility function with loss aversion with respect to a reference point R
 
-# XG: This always creates overflow when the input is large. In general, we can let the returned value to be float64. Also, kick the small alpha away
-def u_inv(y, R=0, alpha=0.88, lamb=2.25): #for example here, do def u_inv(y, R=0, alpha=0.88, lamb=2.25) -> int64
+
+def u_inv(y, R=0, alpha=0.88, lamb=2.25): 
+    """
+    The inverse of the power utility function with loss aversion with respect to a reference point R.
+    """
 
     if y >= 0:
         return y ** (1/(alpha)) + R
@@ -82,6 +85,9 @@ def PV(o, r=0.97, R=0, alpha=0.88, lamb=2.25):
 # Decision weights (pi) function, takes as arguments l dictionary (keys are present values and values are probabilities) and gamma parameter
 
 def dw(l, gamma=0.61):
+    """
+    Compute CPT decision weights for a lottery given a dictionary of outcomes and their probabilities.
+    """
 
     l = dict(sorted(l.items(), reverse=True))
 
@@ -138,7 +144,10 @@ def dw(l, gamma=0.61):
 # Value function, taking the list of present values and the list of physical proababilities as well as all the parameters
 
 def V(pvl, p, r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0):
-
+    """
+    Compute the CPT value of a lottery given the present values of its outcome streams and their probabilities.
+    Using the decision weights from dw(), and order the outcome streams by PV, then do the weighted sum.
+    """
     assert len(pvl) == len(p), "The present values and the probabilities need to be lists of the same length!"
 
     # Merge duplicate outcomes before weighting (CPT requires ranking unique outcomes).
@@ -261,6 +270,7 @@ def evaluation(r=0.97, R=0, alpha=0.88, lamb=2.25, gamma=0.61, lotteries=transfo
 
 
 # Certainty equivalent given the set of parameters
+# XG: So far, this CE function is fine. But for the second and the third period, we may need to update to ce = v^-1 - z_t.
 
 def ce(r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, desired=desired, lotteries=transform(lotteries_full)):
 

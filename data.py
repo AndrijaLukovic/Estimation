@@ -8,7 +8,7 @@ to_drop = ["session_code", "participant_code", "participant_label", "lottery_sta
 
 
 def _export_excel_safely(data, data_period1, data_period2, data_period3, excel_path):
-    """XG: Write debug/export sheets when openpyxl is available, otherwise skip gracefully."""
+
 
     data.to_excel(excel_path, sheet_name="v1", index=False)
     with pd.ExcelWriter(excel_path, mode="a", if_sheet_exists="replace") as writer:
@@ -19,6 +19,9 @@ def _export_excel_safely(data, data_period1, data_period2, data_period3, excel_p
 
 
 def process(export_excel=False, excel_path="pilot.xlsx"):
+    """
+    Process raw pilot data and return cleaned data and period-specific subsets.
+    """
 # XG: i will updeate this function so that: (1) it returns the average of the selected and cutoff, (2) it returns the refined choice, if there is one.
     data = pd.read_csv("pilot.csv")
 

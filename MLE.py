@@ -33,7 +33,9 @@ lottery = lotteries_full
 np.random.seed(5)
 
 def loglikelihood(params, y=None, lotteries=None):
-    """Negative log-likelihood under Normal errors around CPT-implied CE."""
+    """
+    Negative log-likelihood under Normal errors around CPT-implied CE.
+    """
     if y is None:
         # Lazy-load observed CE so importing this module has no heavy side effects.
         y = get_observed_ce(export_excel=False)
@@ -45,7 +47,7 @@ def loglikelihood(params, y=None, lotteries=None):
 
     s = 0.0
     for lottery_id, lottery in lotteries.items():
-        sigma = ksi * lottery["spread"]
+        sigma = ksi * lottery["spread"] # The ksi should be individual level to subject, now this is pooled across lotteries
         ce_observed = y.loc[y["lottery_id"] == lottery_id, "ce_observed"]
         ce = ce_theoretical[lottery_id]
         x = norm.logpdf(ce_observed, loc=ce, scale=sigma)
@@ -55,7 +57,9 @@ def loglikelihood(params, y=None, lotteries=None):
 
 
 def run_multistart_mle(obj_func, n_starts=n_starts, param_bounds=None):
-    """Run bounded multistart optimization and return the best successful result."""
+    """
+    Run bounded multistart optimization and return the best successful result.
+    """
     best_result = None
     best_f = np.inf  # We minimize -LogLikelihood, so smaller is better.
 
@@ -64,14 +68,14 @@ def run_multistart_mle(obj_func, n_starts=n_starts, param_bounds=None):
 
     for i in range(n_starts):
         print(f"Run {i + 1}/{n_starts}...", end="\r", flush=True)
-        random_guess = np.random.uniform(lower_bounds, upper_bounds)
+        random_guess = np.random.uniform(lower_bounds, upper_bounds) # A random starting guess within bounds for each parameter
 
         res = minimize(
             obj_func,
             x0=random_guess,
             bounds=param_bounds,
             method="L-BFGS-B",
-        )
+        ) #scipy minimize with L-BFGS-B method for bounded optimization
 
         if res.success and res.fun < best_f:
             best_f = res.fun
@@ -83,7 +87,9 @@ def run_multistart_mle(obj_func, n_starts=n_starts, param_bounds=None):
 
 
 def estimate_mle(n_starts=n_starts, param_bounds=bounds, y=None, lotteries=None):
-    """Estimate parameters with multistart MLE and fail loudly if nothing converged."""
+    """
+    Estimate parameters with multistart MLE and fail loudly if nothing converged.
+    """
     if y is None:
         y = get_observed_ce(export_excel=False)
     if lotteries is None:

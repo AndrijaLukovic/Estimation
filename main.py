@@ -6,7 +6,9 @@ r, alpha, lamb, gamma, R, desired = 0.97, 0.88, 2.25, 0.61, 0, "lottery_3" # Wha
 
 
 def get_observed_ce(export_excel=False):
-    """Build observed CE data used by MLE from period-1 responses."""
+    """
+    Build observed CE choice used by MLE from period-1 responses.
+    """
     data, data_period1, data_period2, data_period3 = process(export_excel=export_excel)
 
     if "ce_observed" in data_period1.columns:
