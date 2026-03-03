@@ -30,4 +30,4 @@ if __name__ == "__main__":
 
     print(type(y))
 
-    print(y["ce_observed"] + 3)
+    print(y["ce_observed"])
