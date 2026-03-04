@@ -137,9 +137,6 @@ def dw(l, gamma=0.61):
     return d, pi
 
 
-# print(dw({1:0.15, 2:0.25, 3:0.25, 4:0.25, -1:0.1}, gamma))
-
-
 
 # Value function, taking the list of present values and the list of physical proababilities as well as all the parameters
 
@@ -290,6 +287,15 @@ def ce_dict(r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, lotteries = transfor
     evaluated_lotteries = evaluation(r=r, R=R, alpha=alpha, lamb=lamb, gamma=gamma, lotteries=lotteries)
 
     return {i: u_inv(evaluated_lotteries[i]["V"], R, alpha, lamb) for i in lotteries}
+
+
+def ce_at_rounds(r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, desired=desired, lotteries=transform(lotteries_full), round=1):
+
+    if round == 1:
+
+        return ce(r, gamma, alpha, lamb, R, desired, lotteries) 
+
+
 
 
 
