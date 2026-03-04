@@ -114,7 +114,7 @@ def estimate_mle(n_starts=n_starts, param_bounds=bounds, y=None, lotteries=None)
         lotteries = f.transform(lottery)
 
     subjects = sorted(y["participant_label"].unique())
-    full_bounds = list(param_bounds) + [(1e-3, 3.0)] * len(subjects) # bounds for structural parameters + bounds for individual error terms
+    full_bounds = list(param_bounds) + [(1e-3, None)] * len(subjects) # bounds for structural parameters + bounds for individual error terms
 
     def objective(theta):
         return loglikelihood(theta, y=y, lotteries=lotteries, subjects=subjects)

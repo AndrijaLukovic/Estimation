@@ -76,9 +76,21 @@ def estimate_mle_parallel(n_starts=n_starts, param_bounds=bounds, y=None, lotter
 
 
 if __name__ == "__main__":
-    result = estimate_mle_parallel(n_starts=n_starts, param_bounds=bounds)
+    y = get_observed_ce(export_excel=False)
+    subjects = sorted(y["participant_label"].unique())
+
+    result = estimate_mle_parallel(n_starts=n_starts, param_bounds=bounds, y=y)
     results_df = format_results(result)
 
     print("\nMAXIMUM LIKELIHOOD ESTIMATES (PARALLEL)")
     print(results_df.to_string(index=False))
     print(f"Best Log-Likelihood: {-result.fun:.4f}")
+    print(f"Estimated lottery choice data: {lottery}")
+
+    # Write individual ksi values to txt file
+    ksi_values = result.x[5:]
+    ksi_lines = [f"{subj}\t{ksi:.6f}" for subj, ksi in zip(subjects, ksi_values)]
+    with open("ksi_estimates.txt", "w") as fh:
+        fh.write("participant_label\tksi\n")
+        fh.write("\n".join(ksi_lines) + "\n")
+    print("Individual ksi estimates written to ksi_estimates.txt")
