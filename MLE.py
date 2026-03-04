@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
 from scipy.stats import norm
-
 import functions as f
 from lotteries import lotteries_full, one
 from main import get_observed_ce
