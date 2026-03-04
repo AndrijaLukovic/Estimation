@@ -7,6 +7,8 @@ import functions as f
 from main import get_observed_ce
 from MLE import loglikelihood, bounds, params, n_starts, lottery, format_results
 
+from lotteries import low_stake, high_stake
+
 
 def _single_run(random_guess, obj_func, param_bounds):
     """

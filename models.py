@@ -2,7 +2,16 @@ import numpy as np
 import math
 import random
 
+from lotteries import lotteries_full, one
 
+from functions import transform
+
+
+lotteries_transformed = transform(lotteries_full)
+
+print(one.keys())
+
+print(one['lottery_1']['periods'])
 
 
 ### Definitions of Reference Points

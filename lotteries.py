@@ -1292,3 +1292,21 @@ lotteries_full = {
 }
 
 }
+
+low_stake = []
+
+high_stake = []
+
+for i in lotteries_full.keys():
+    
+    if lotteries_full[i]['stake'] == 'lo':
+        
+        low_stake.append(i)
+
+    else:
+        
+        high_stake.append(i)
+
+print(low_stake)
+
+print(high_stake)
