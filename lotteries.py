@@ -1307,6 +1307,5 @@ for i in lotteries_full.keys():
         
         high_stake.append(i)
 
-print(low_stake)
-
-print(high_stake)
+all_low_stake = {k: lotteries_full[k] for k in low_stake}
+all_high_stake = {k: lotteries_full[k] for k in low_stake}

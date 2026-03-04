@@ -3,7 +3,7 @@ import pandas as pd
 from scipy.optimize import minimize
 from scipy.stats import norm
 import functions as f
-from lotteries import lotteries_full, one
+from lotteries import lotteries_full, one, all_high_stake, all_low_stake
 from main import get_observed_ce
 import openpyxl
 
@@ -22,7 +22,7 @@ bounds = [
 
 # Iteration time
 n_starts = 100
-lottery = lotteries_full
+lottery = all_low_stake # Lottery set
 
 # random setup
 np.random.seed(10)
