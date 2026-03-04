@@ -22,7 +22,11 @@ bounds = [
 
 # Iteration time
 n_starts = 100
-lottery = all_low_stake # Lottery set
+
+# ── Lottery set to estimate on ──────────────────────────────────────────────
+# Switch between all_low_stake / all_high_stake / lotteries_full
+lottery = all_low_stake
+# ────────────────────────────────────────────────────────────────────────────
 
 # random setup
 np.random.seed(10)
@@ -54,7 +58,7 @@ def loglikelihood(params, y=None, lotteries=None, subjects=None):
 
     # Map the specification of ksi
     spreads = {lid: lotteries[lid]["spread"] for lid in lotteries}
-    y = y.copy()
+    y = y[y["lottery_id"].isin(lotteries.keys())].copy()
     y["ce_th"] = y["lottery_id"].map(ce_theoretical)
     y["spread"] = y["lottery_id"].map(spreads)
     y["sigma"] = y["participant_label"].map(ksi_map) * y["spread"]
@@ -135,3 +139,4 @@ if __name__ == "__main__":
     print("\nMAXIMUM LIKELIHOOD ESTIMATES")
     print(results_df.to_string(index=False))
     print(f"Best Log-Likelihood: {-result.fun:.4f}")
+    print(f"Estimated lottery choice data: {lottery}")
