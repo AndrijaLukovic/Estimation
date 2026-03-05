@@ -7,18 +7,17 @@ from lotteries import lotteries_full, one, all_high_stake, all_low_stake
 from main import get_observed_ce
 import openpyxl
 
-# r, alpha, lamb, gamma, R
-params = [0.97, 0.88, 2.25, 0.61, 0]
+prob_weighter = "tk"  # "tk" or "prelec"
 
-bounds = [
-    (1e-4, 1),    # r
-    (0.5, 1.5),       # alpha  <-- too little alpha causes underflow
-    (1e-3, 7.0),    # lamb
-    (0.2, 1),     # gamma
-    (-100, 100),    # R
-    # per-subject ksi bounds added dynamically in estimate_mle
-]
+# Structural parameter bounds — only the probability weighting bounds differ
+_shared_front = [(1e-4, 0.2), (0.5, 1.5), (1e-3, 7.0)]  # r, alpha, lamb
+_shared_R     = [(-100, 100)]                              # R (always last)
 
+bounds_tk     = _shared_front + [(0.2, 1)]          + _shared_R  # + gamma
+bounds_prelec = _shared_front + [(0.1, 1), (0.1, 1)] + _shared_R  # + beta, palpha
+
+
+bounds = bounds_tk if prob_weighter == "tk" else bounds_prelec
 
 # Iteration time
 n_starts = 100
@@ -31,15 +30,17 @@ lottery = all_low_stake
 # random setup
 np.random.seed(10)
 
-def loglikelihood(params, y=None, lotteries=None, subjects=None):
+def loglikelihood(params, y=None, lotteries=None, subjects=None, method=prob_weighter):
     """
     Negative log-likelihood with individual error terms.
 
-    params = [r, alpha, lamb, gamma, R, ksi_1, ksi_2, ..., ksi_N]
+    TK:     params = [r, alpha, lamb, gamma, R,           ksi_1, ..., ksi_N]
+    Prelec: params = [r, alpha, lamb, beta, palpha, R,    ksi_1, ..., ksi_N]
 
     subjects is the ordered list of participant_label values that maps
-    params[5], params[6], ... to individual subjects.
+    the ksi block to individual subjects.
 
+    method should be either "tk" or "prelec".
     """
     # Get data ready
     if y is None:
@@ -49,12 +50,19 @@ def loglikelihood(params, y=None, lotteries=None, subjects=None):
     if subjects is None:
         subjects = sorted(y["participant_label"].unique())
     # Setup systematic parameters
-    r, alpha, lamb, gamma, R = params[:5]
+    if method == "tk":
+        r, alpha, lamb, gamma, R = params[:5]
+        beta, palpha = 1, 1   # defaults passed to ce_dict but unused by TK
+        ksi_offset = 5
+    elif method == "prelec":
+        r, alpha, lamb, beta, palpha, R = params[:6]
+        gamma = 0.61          # default passed to ce_dict but unused by Prelec
+        ksi_offset = 6
     # Setup individual error terms
-    ksi_map = {subj: params[5 + i] for i, subj in enumerate(subjects)} # Create a mapping from participant_label to their corresponding ksi_i value from the params vector.
+    ksi_map = {subj: params[ksi_offset + i] for i, subj in enumerate(subjects)}  # Create a mapping from participant_label to their corresponding ksi_i value from the params vector.
 
     # Compute the theoretical CE
-    ce_theoretical = f.ce_dict(r, gamma, alpha, lamb, R, lotteries=lotteries)
+    ce_theoretical = f.ce_dict(r, gamma, alpha, lamb, R, lotteries=lotteries, method=method, beta=beta, palpha=palpha)
 
     # Map the specification of ksi
     spreads = {lid: lotteries[lid]["spread"] for lid in lotteries}
@@ -103,10 +111,10 @@ def estimate_mle(n_starts=n_starts, param_bounds=bounds, y=None, lotteries=None)
     """
     Estimate parameters with multistart MLE and fail loudly if nothing converged.
 
-    The full parameter vector is [r, alpha, lamb, gamma, R, ksi_1, ..., ksi_N].
-    Per-subject ksi bounds (1e-3, 3.0) are appended to param_bounds dynamically
-    based on the number of unique subjects in y. Only the 5 CPT parameters are
-    reported; ksi_i values are estimated but not surfaced in format_results.
+    TK:     full vector = [r, alpha, lamb, gamma, R,        ksi_1, ..., ksi_N]
+    Prelec: full vector = [r, alpha, lamb, beta, palpha, R, ksi_1, ..., ksi_N]
+    Per-subject ksi bounds (1e-3, None) are appended to param_bounds dynamically
+    based on the number of unique subjects in y.
     """
     if y is None:
         y = get_observed_ce(export_excel=False)
@@ -125,10 +133,15 @@ def estimate_mle(n_starts=n_starts, param_bounds=bounds, y=None, lotteries=None)
     return result
 
 
-def format_results(result):
-    param_names = ["r", "Alpha", "Lambda", "Gamma", "R"]
+def format_results(result, method=prob_weighter):
+    if method == "tk":
+        param_names = ["r", "Alpha", "Lambda", "Gamma", "R"]
+        n_structural = 5
+    else:  # prelec
+        param_names = ["r", "Alpha", "Lambda", "Beta", "PAlpha", "R"]
+        n_structural = 6
     return pd.DataFrame(
-        {"Parameter": pd.Series(param_names), "Estimate": pd.Series(result.x[:5])}
+        {"Parameter": param_names, "Estimate": result.x[:n_structural]}
     )
 
 
@@ -145,7 +158,8 @@ if __name__ == "__main__":
     print(f"Estimated lottery choice data: {lottery}")
 
     # Write individual ksi values to txt file
-    ksi_values = result.x[5:]
+    ksi_offset = 5 if prob_weighter == "tk" else 6
+    ksi_values = result.x[ksi_offset:]
     ksi_lines = [f"{subj}\t{ksi:.6f}" for subj, ksi in zip(subjects, ksi_values)]
     with open("ksi_estimates.txt", "w") as fh:
         fh.write("participant_label\tksi\n")

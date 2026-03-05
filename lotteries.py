@@ -6,8 +6,8 @@ lotteries = {
             'name': 'Apple',
             'outcome_number': 4,
             'stake': 'lo',
-            'max_payoff': 40,
-            'min_payoff': -12,
+            'max_payoff': 25,
+            'min_payoff': -20,
             'description': 'Example lottery with four final outcomes',
             'periods': {
                 "0": [{'label': 'Start', 'probability': 1, 'from': None, 'abs_prob' : 1}],
@@ -93,8 +93,8 @@ one = {
             'name': 'Apple',
             'outcome_number': 4,
             'stake': 'lo',
-            'max_payoff': 40,
-            'min_payoff': -12,
+            'max_payoff': 25,
+            'min_payoff': -20,
             'description': 'Example lottery with four final outcomes',
             'periods': {
                 "0": [{'label': 'Start', 'probability': 1, 'from': None, 'abs_prob' : 1}],

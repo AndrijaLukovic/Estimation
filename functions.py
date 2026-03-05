@@ -13,7 +13,8 @@ r, alpha, lamb, gamma, R, desired = 0.97, 0.88, 2.25, 0.61, 0, "lottery_3"
 
 # Probability weighting function
 
-def pw(p, gamma=0.61):
+def pw(p, gamma=0.61, beta=1, alpha=1, method = "tk"):
+
 
     if p == 1:
 
@@ -24,7 +25,10 @@ def pw(p, gamma=0.61):
         return 0
 
     else:
-        return (p ** gamma)/((p ** gamma + (1 - p) ** gamma) ** (1 / gamma))
+        if method == "tk":
+            return (p ** gamma)/((p ** gamma + (1 - p) ** gamma) ** (1 / gamma))
+        elif method == "prelec":
+            return math.exp(- beta * (- math.log(p)) ** alpha)
 
 
 
@@ -84,9 +88,10 @@ def PV(o, r=0.97, R=0, alpha=0.88, lamb=2.25):
 
 # Decision weights (pi) function, takes as arguments l dictionary (keys are present values and values are probabilities) and gamma parameter
 
-def dw(l, gamma=0.61):
+def dw(l, gamma=0.61, beta=1, palpha=1, method="tk"):
     """
     Compute CPT decision weights for a lottery given a dictionary of outcomes and their probabilities.
+    Two methods applicable: Tverky and Kahneman (1992) or Prelec (1998, single param version).
     """
 
     l = dict(sorted(l.items(), reverse=True))
@@ -103,11 +108,11 @@ def dw(l, gamma=0.61):
 
         if i == 0:
 
-            pi.append(pw(p[i], gamma))
+            pi.append(pw(p[i], gamma, beta, palpha, method))
 
         else:
 
-            pi.append(pw(sum([p[j] for j in range(i+1)]), gamma) - pw(sum([p[h] for h in range(i)]), gamma))
+            pi.append(pw(sum([p[j] for j in range(i+1)]), gamma, beta, palpha, method) - pw(sum([p[h] for h in range(i)]), gamma, beta, palpha, method))
 
         i = i + 1
     
@@ -119,11 +124,11 @@ def dw(l, gamma=0.61):
 
         if i == len(l) - 1:
 
-            pi.append(pw(p[i], gamma))
+            pi.append(pw(p[i], gamma, beta, palpha, method))
 
         else:
 
-            pi.append(pw(sum([p[j] for j in range(i, len(l))]), gamma) - pw(sum([p[h] for h in range(i+1, len(l))]), gamma))
+            pi.append(pw(sum([p[j] for j in range(i, len(l))]), gamma, beta, palpha, method) - pw(sum([p[h] for h in range(i+1, len(l))]), gamma, beta, palpha, method))
 
         i = i + 1
 
@@ -140,7 +145,7 @@ def dw(l, gamma=0.61):
 
 # Value function, taking the list of present values and the list of physical proababilities as well as all the parameters
 
-def V(pvl, p, r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0):
+def V(pvl, p, r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, method="tk", beta=1, palpha=1):
     """
     Compute the CPT value of a lottery given the present values of its outcome streams and their probabilities.
     Using the decision weights from dw(), and order the outcome streams by PV, then do the weighted sum.
@@ -155,7 +160,7 @@ def V(pvl, p, r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0):
 
     # dw(...) returns weights ordered by sorted outcomes, so we must dot with the
     # same ordered outcome vector (not the original unsorted/duplicated pvl list).
-    dweights, _ = dw(d, gamma)
+    dweights, _ = dw(d, gamma, beta, palpha, method)
     ranked_outcomes = np.array(list(dweights.keys()), dtype=float)
     ranked_weights = np.array(list(dweights.values()), dtype=float)
 
@@ -211,7 +216,10 @@ lotteries_transformed = transform(lotteries_full)
 
 
 
-def evaluation(r=0.97, R=0, alpha=0.88, lamb=2.25, gamma=0.61, lotteries=transform(lotteries_full)):
+def evaluation(
+        r=0.97, R=0, alpha=0.88, lamb=2.25, gamma=0.61, lotteries=transform(lotteries_full),
+        beta=1, palpha=1, method="tk"
+        ):
     
     lotteries_v2 = {}
 
@@ -253,7 +261,7 @@ def evaluation(r=0.97, R=0, alpha=0.88, lamb=2.25, gamma=0.61, lotteries=transfo
 
         a["PV"] = b
 
-        a["V"] = V(pvl,prob, r, gamma, alpha, lamb, R)
+        a["V"] = V(pvl,prob, r, gamma, alpha, lamb, R, method=method, beta=beta, palpha=palpha)
 
         a["present_values_of_streams"] = pvl
 
@@ -269,10 +277,10 @@ def evaluation(r=0.97, R=0, alpha=0.88, lamb=2.25, gamma=0.61, lotteries=transfo
 # Certainty equivalent given the set of parameters
 # XG: So far, this CE function is fine. But for the second and the third period, we may need to update to ce = v^-1 - z_t.
 
-def ce(r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, desired=desired, lotteries=transform(lotteries_full)):
+def ce(r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, desired=desired, lotteries=transform(lotteries_full), method="tk", beta=1, palpha=1):
 
     # Pass through all parameters so CE is computed at the current candidate point.
-    evaluated_lotteries = evaluation(r=r, R=R, alpha=alpha, lamb=lamb, gamma=gamma, lotteries=lotteries)
+    evaluated_lotteries = evaluation(r=r, R=R, alpha=alpha, lamb=lamb, gamma=gamma, lotteries=lotteries, method=method, beta=beta, palpha=palpha)
 
     l = evaluated_lotteries[desired]
 
@@ -282,18 +290,18 @@ def ce(r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, desired=desired, lotterie
 
 
 
-def ce_dict(r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, lotteries = transform(lotteries_full)):
+def ce_dict(r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, lotteries = transform(lotteries_full), method="tk", beta=1, palpha=1):
 
-    evaluated_lotteries = evaluation(r=r, R=R, alpha=alpha, lamb=lamb, gamma=gamma, lotteries=lotteries)
+    evaluated_lotteries = evaluation(r=r, R=R, alpha=alpha, lamb=lamb, gamma=gamma, lotteries=lotteries, method=method, beta=beta, palpha=palpha)
 
     return {i: u_inv(evaluated_lotteries[i]["V"], R, alpha, lamb) for i in lotteries}
 
 
-def ce_at_rounds(r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, desired=desired, lotteries=transform(lotteries_full), round=1):
+def ce_at_rounds(r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, desired=desired, lotteries=transform(lotteries_full), round=1, method="tk", beta=1, palpha=1):
 
     if round == 1:
 
-        return ce(r, gamma, alpha, lamb, R, desired, lotteries) 
+        return ce(r, gamma, alpha, lamb, R, desired, lotteries, method=method, beta=beta, palpha=palpha)
 
 
 

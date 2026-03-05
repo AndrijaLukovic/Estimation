@@ -5,7 +5,7 @@ from scipy.optimize import minimize
 
 import functions as f
 from main import get_observed_ce
-from MLE import loglikelihood, bounds, params, n_starts, lottery, format_results
+from MLE import loglikelihood, bounds, prob_weighter, n_starts, lottery, format_results
 
 from lotteries import low_stake, high_stake
 
@@ -65,7 +65,7 @@ def estimate_mle_parallel(n_starts=n_starts, param_bounds=bounds, y=None, lotter
         lotteries = f.transform(lottery)
 
     subjects = sorted(y["participant_label"].unique())
-    full_bounds = list(param_bounds) + [(1e-3, 3.0)] * len(subjects)
+    full_bounds = list(param_bounds) + [(1e-3, None)] * len(subjects)
 
     objective = partial(loglikelihood, y=y, lotteries=lotteries, subjects=subjects)
 
@@ -88,7 +88,8 @@ if __name__ == "__main__":
     print(f"Estimated lottery choice data: {lottery}")
 
     # Write individual ksi values to txt file
-    ksi_values = result.x[5:]
+    ksi_offset = 5 if prob_weighter == "tk" else 6
+    ksi_values = result.x[ksi_offset:]
     ksi_lines = [f"{subj}\t{ksi:.6f}" for subj, ksi in zip(subjects, ksi_values)]
     with open("ksi_estimates.txt", "w") as fh:
         fh.write("participant_label\tksi\n")
