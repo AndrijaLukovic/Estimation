@@ -67,6 +67,9 @@ def process(export_excel=False, excel_path="pilot.xlsx"):
     if export_excel:
         _export_excel_safely(data, data_period1, data_period2, data_period3, excel_path)
 
+    # If use pseudodata, call this line
+    # PLEASE COMMENT OUT IF YOU USE REAL DATA!!!
+    data_period1 = pd.read_csv("augmented_pilot.csv")
 
     return data, data_period1, data_period2, data_period3
 

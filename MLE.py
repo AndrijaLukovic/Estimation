@@ -7,28 +7,28 @@ from lotteries import lotteries_full, one, all_high_stake, all_low_stake
 from main import get_observed_ce
 import openpyxl
 
-prob_weighter = "tk"  # "tk" or "prelec"
+prob_weighter = "prelec"  # "tk" or "prelec"
 
 # Structural parameter bounds — only the probability weighting bounds differ
-_shared_front = [(1e-4, 0.2), (0.5, 1.5), (1e-3, 7.0)]  # r, alpha, lamb
-_shared_R     = [(-100, 100)]                              # R (always last)
+_shared_front = [(1e-4, 0.1), (0.5, 1.5), (0.5,3)]  # r, alpha, lamb
+_shared_R     = [(0,0)]                              # R (always last)
 
-bounds_tk     = _shared_front + [(0.2, 1)]          + _shared_R  # + gamma
-bounds_prelec = _shared_front + [(0.1, 1), (0.1, 1)] + _shared_R  # + beta, palpha
+bounds_tk     = _shared_front + [(0.2, 1)]         + _shared_R  # + gamma
+bounds_prelec = _shared_front + [(1,1), (0.1, 0.8)] + _shared_R  # + beta, palpha
 
 
 bounds = bounds_tk if prob_weighter == "tk" else bounds_prelec
 
 # Iteration time
-n_starts = 100
+n_starts = 150
 
 # ── Lottery set to estimate on ──────────────────────────────────────────────
 # Switch between all_low_stake / all_high_stake / lotteries_full
-lottery = all_low_stake
+lottery = lotteries_full
 # ────────────────────────────────────────────────────────────────────────────
 
 # random setup
-np.random.seed(10)
+np.random.seed(5)
 
 def loglikelihood(params, y=None, lotteries=None, subjects=None, method=prob_weighter):
     """
@@ -138,7 +138,7 @@ def format_results(result, method=prob_weighter):
         param_names = ["r", "Alpha", "Lambda", "Gamma", "R"]
         n_structural = 5
     else:  # prelec
-        param_names = ["r", "Alpha", "Lambda", "Beta", "PAlpha", "R"]
+        param_names = ["r", "Alpha", "Lambda", "Beta", "Prelec Alpha", "R"]
         n_structural = 6
     return pd.DataFrame(
         {"Parameter": param_names, "Estimate": result.x[:n_structural]}

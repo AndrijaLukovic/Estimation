@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python simulation_ce.py)",
+      "Bash(python -c \":*)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(python -u simulation_ce.py)",
+      "Bash(python -c \"print\\(''hello''\\)\")"
+    ]
+  }
+}

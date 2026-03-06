@@ -85,7 +85,7 @@ if __name__ == "__main__":
     print("\nMAXIMUM LIKELIHOOD ESTIMATES (PARALLEL)")
     print(results_df.to_string(index=False))
     print(f"Best Log-Likelihood: {-result.fun:.4f}")
-    print(f"Estimated lottery choice data: {lottery}")
+
 
     # Write individual ksi values to txt file
     ksi_offset = 5 if prob_weighter == "tk" else 6
