@@ -1,5 +1,4 @@
-from lotteries import one
-from lotteries import lotteries
+from lotteries import one, lotteries
 
 
 # Params a1, a2, a3, defining the convex linear combination of reference points
@@ -9,6 +8,8 @@ weights = [0.25, 0.25, 0.25, 0.25]
 # Delta entering partial adaptation
 
 delta = 1
+
+r = 0.97
 
 
 
@@ -79,6 +80,43 @@ def cumulative_transform(lotteries):
 
 lotteries_v2 = cumulative_transform(lotteries)
 
+print(cumulative_transform(one)["lottery_1"]["periods"])
+
+
+def ev_lotteries(r=r, lotteries=lotteries_v2):
+
+    # Calculate the expected value at time zero for all lotteries
+
+    lotteries_new = {}
+
+    for k, v in lotteries.items():
+
+        dict_temp = v
+
+        m = dict_temp["periods"]["3"]
+
+        s = 0
+
+        for d in m:
+
+            path = d["path"]
+
+            p = d["abs_prob"]
+
+            s = s + sum(path[i]*(r**i) for i in range(len(path)))*p
+
+        # dict_temp["EV at 0"] = s
+
+        lotteries_new[k] = {"EV at 0":s}
+
+    for k, v in lotteries.items():
+
+        dict_temp = v
+
+    return lotteries_new
+
+
+print(ev_lotteries(r, lotteries=cumulative_transform(one)))
 
 
 def rp(period=0, delta=delta, weights=weights, label="Start", fr=None, parent=None, lottery = "lottery_1", lotteries=lotteries_v2):
@@ -89,8 +127,14 @@ def rp(period=0, delta=delta, weights=weights, label="Start", fr=None, parent=No
 
     d_period = d[str(period)]
 
-    z = d_period["path"]
+    # z = d_period["path"]
 
 
-print(rp())
+
+
+# print(rp())
+
+
+
+# print(cumulative_transform(one)["lottery_1"]["periods"]["3"])
 
