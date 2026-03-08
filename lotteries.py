@@ -1293,6 +1293,7 @@ lotteries_full = {
 
 }
 
+
 low_stake = []
 
 high_stake = []
