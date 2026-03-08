@@ -1294,19 +1294,11 @@ lotteries_full = {
 }
 
 
-low_stake = []
 
-high_stake = []
 
-for i in lotteries_full.keys():
-    
-    if lotteries_full[i]['stake'] == 'lo':
-        
-        low_stake.append(i)
+low_stake = [i for i, val in lotteries_full.items() if val['stake'] == 'lo']
+high_stake = [i for i, val in lotteries_full.items() if val['stake'] != 'lo']
 
-    else:
-        
-        high_stake.append(i)
 
 all_low_stake = {k: lotteries_full[k] for k in low_stake}
 all_high_stake = {k: lotteries_full[k] for k in high_stake}

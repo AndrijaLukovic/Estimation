@@ -23,10 +23,13 @@ def process(export_excel=False, excel_path="pilot.xlsx"):
     Process raw pilot data and return cleaned data and period-specific subsets.
     """
 # XG: i will updeate this function so that: (1) it returns the average of the selected and cutoff, (2) it returns the refined choice, if there is one.
+    
     data = pd.read_csv("pilot.csv")
     
     data.dropna(axis=0, how="any", subset=["participant_label", "realized_period1_label"], inplace=True)
+    
     # Drop rows who report too complicated in the post experiment questionnaire.
+    
     to_drop_subjects = data[data["quiz6"] == "Very complicated"]["participant_label"].unique()
     data = data[~data["participant_label"].isin(to_drop_subjects)]
 
@@ -67,9 +70,10 @@ def process(export_excel=False, excel_path="pilot.xlsx"):
     if export_excel:
         _export_excel_safely(data, data_period1, data_period2, data_period3, excel_path)
 
+    
     # If use pseudodata, call this line
     # PLEASE COMMENT OUT IF YOU USE REAL DATA!!!
-    data_period1 = pd.read_csv("augmented_pilot.csv")
+    # data_period1 = pd.read_csv("augmented_pilot.csv")
 
     return data, data_period1, data_period2, data_period3
 
@@ -77,6 +81,3 @@ def process(export_excel=False, excel_path="pilot.xlsx"):
 if __name__ == "__main__":
 
     data, data_period1, data_period2, data_period3 = process(export_excel=True)
-
-
-

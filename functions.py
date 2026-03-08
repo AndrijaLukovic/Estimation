@@ -89,6 +89,7 @@ def PV(o, r=0.97, R=0, alpha=0.88, lamb=2.25):
 # Decision weights (pi) function, takes as arguments l dictionary (keys are present values and values are probabilities) and gamma parameter
 
 def dw(l, gamma=0.61, beta=1, palpha=1, method="tk"):
+
     """
     Compute CPT decision weights for a lottery given a dictionary of outcomes and their probabilities.
     Two methods applicable: Tverky and Kahneman (1992) or Prelec (1998, single param version).
@@ -211,7 +212,51 @@ def transform(lotteries):
     return lotteries_v2
 
 
-lotteries_transformed = transform(lotteries_full)
+
+
+def transform2(lotteries):
+
+    lotteries_v2 = {}
+
+    l = lotteries.keys()
+
+    for i in l:
+
+        a = {}
+
+        lottery = lotteries[i]
+
+        a['name'] = lottery['name']
+
+        a["spread"] = abs(lottery["max_payoff"] - lottery["min_payoff"])
+
+        o = lottery['periods']
+
+        last = o["3"]
+
+        n = len(o["3"])
+
+        outcomes = {}
+
+        for j in range(n):
+
+            p = last[j]['abs_prob']
+    
+            stream = {p: [0, int(last[j]["parent"].replace('£', '')) if '£' in last[j]["parent"] else int(last[j]["parent"]), int(last[j]["from"].replace('£', '')) if '£' in last[j]["from"] else int(last[j]["from"]), int(last[j]["label"].replace('£', '')) if '£' in last[j]["label"] else int(last[j]["label"])]}
+
+            stream["label"] = last[j]["label"]
+
+            stream["from"] = last[j]["from"]
+
+            stream["parent"] = last[j]["parent"]
+
+            outcomes[j] = stream
+
+        a['outcomes'] = outcomes
+
+        lotteries_v2[i] = a
+
+    return lotteries_v2
 
 
 
@@ -308,12 +353,5 @@ def ce_at_rounds(r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, desired=desired
 
 
 if __name__ == "__main__":
-
-    # print(evaluation(r, R, alpha, lamb, gamma))
-
-    # print(ce(r, gamma, alpha, lamb, R))
-
-
-    # print(list(lotteries_transformed.keys()))
 
     print(ce_dict())
