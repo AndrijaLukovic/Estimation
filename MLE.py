@@ -90,7 +90,7 @@ def loglikelihood(params, y=None, lotteries=None, subjects=None, method=prob_wei
 
 
 
-def loglikelihood_mixture(params, y=None, lotteries=None, subjects=None, method=prob_weighter):
+def loglikelihood_mixture(params, c=cluster_number, y=None, lotteries=None, subjects=None, method=prob_weighter):
     """
     Negative log-likelihood with individual error terms.
 
@@ -104,6 +104,7 @@ def loglikelihood_mixture(params, y=None, lotteries=None, subjects=None, method=
 
     method should be either "tk" or "prelec".
     """
+    
     
     # Get data ready
     if y is None:
