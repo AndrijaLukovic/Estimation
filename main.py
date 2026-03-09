@@ -7,20 +7,12 @@ r, alpha, lamb, gamma, R, desired = 0.97, 0.88, 2.25, 0.61, 0, "lottery_3" # Wha
 
 def get_observed_ce(export_excel=False):
     """
-    Build observed CE choice used by MLE from period-1 responses.
+    Return participant-level observed CEs with their realised branch labels.
+    CE computation lives in data.process().
     """
-    data, data_period1, data_period2, data_period3 = process(export_excel=export_excel)
+    data, _, _, _ = process(export_excel=export_excel)
 
-    if "ce_observed" in data_period1.columns:
-        y = data_period1[["participant_label", "lottery_id", "ce_observed"]].copy()
-    elif {"selected_amount", "cutoff_amount"}.issubset(data_period1.columns):
-        y = data_period1[["participant_label", "lottery_id"]].copy()
-        y["ce_observed"] = data_period1[["selected_amount", "cutoff_amount"]].mean(axis=1)
-    else:
-        y = data_period1[["participant_label", "lottery_id", "selected_amount"]].copy()
-        y.rename(columns={"selected_amount": "ce_observed"}, inplace=True)
-
-    return y
+    return data[["participant_label", "lottery_id", "round_number", "ce_observed", "realized_period1_label", "realized_period2_label"]].copy()
 
 
 if __name__ == "__main__":

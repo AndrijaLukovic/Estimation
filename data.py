@@ -24,7 +24,8 @@ def process(export_excel=False, excel_path="pilot.xlsx"):
     """
 # XG: i will updeate this function so that: (1) it returns the average of the selected and cutoff, (2) it returns the refined choice, if there is one.
     
-    data = pd.read_csv("pilot.csv")
+    data = pd.read_csv("pilot.csv", skipinitialspace=True)
+    data.columns = data.columns.str.strip()
     
     data.dropna(axis=0, how="any", subset=["participant_label", "realized_period1_label"], inplace=True)
     

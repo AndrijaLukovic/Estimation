@@ -136,5 +136,74 @@ def rp(period=0, delta=delta, weights=weights, label="Start", fr=None, parent=No
 
 
 
-# print(cumulative_transform(one)["lottery_1"]["periods"]["3"])
+print(cumulative_transform(one)["lottery_1"]["periods"]["3"])
+
+
+def ev_by_branch(r=r, lotteries=lotteries_v2):
+    """
+    For each lottery, compute the discounted EV contribution and conditional EV
+    for each top-level (period-1) branch, identified via the 'parent' field
+    on terminal period-3 nodes.
+
+    Returns:
+        {
+          lottery_key: {
+            "name": ...,
+            "total_ev": ...,
+            "branches": {
+              branch_label: {
+                "branch_prob": ...,
+                "ev_contribution": ...,   # weighted contribution to total EV
+                "conditional_ev": ...     # EV conditional on being in this branch
+              }
+            }
+          }
+        }
+    """
+    results = {}
+
+    for lottery_key, lottery_data in lotteries.items():
+        periods = lottery_data["periods"]
+        last_period = str(max(int(k) for k in periods.keys()))
+        final_outcomes = periods[last_period]
+
+        # Gather branch prob and EV contribution keyed by period-1 label (parent)
+        branch_data = {}
+        for outcome in final_outcomes:
+            path = outcome["path"]
+            p = outcome["abs_prob"]
+            branch_label = outcome.get("parent", outcome.get("from"))
+
+            discounted = sum(path[i] * (r ** i) for i in range(len(path))) * p
+
+            if branch_label not in branch_data:
+                branch_data[branch_label] = {"branch_prob": 0.0, "ev_contribution": 0.0}
+            branch_data[branch_label]["branch_prob"] += p
+            branch_data[branch_label]["ev_contribution"] += discounted
+
+        # Compute conditional EV = ev_contribution / branch_prob
+        for _, vals in branch_data.items():
+            bp = vals["branch_prob"]
+            vals["conditional_ev"] = vals["ev_contribution"] / bp if bp > 0 else 0.0
+
+        results[lottery_key] = {
+            "name": lottery_data["name"],
+            "total_ev": sum(v["ev_contribution"] for v in branch_data.values()),
+            "branches": branch_data,
+        }
+
+    return results
+
+
+ev_branches = ev_by_branch(r, lotteries=cumulative_transform(lotteries))
+
+for lottery_key, data in ev_branches.items():
+    print(f"\n{lottery_key} ({data['name']})  |  Total EV: {data['total_ev']:.4f}")
+    for branch_label, vals in data["branches"].items():
+        print(
+            f"  Branch [{branch_label}]"
+            f"  prob={vals['branch_prob']:.3f}"
+            f"  EV contribution={vals['ev_contribution']:.4f}"
+            f"  conditional EV={vals['conditional_ev']:.4f}"
+        )
 

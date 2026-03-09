@@ -319,10 +319,27 @@ def evaluation(
 
 
 
-# Certainty equivalent given the set of parameters
-# XG: So far, this CE function is fine. But for the second and the third period, we may need to update to ce = v^-1 - z_t.
+# Parse a period label like "+£26" or "-£29" into an integer.
+def _parse_label(label):
+    return int(label.replace('£', ''))
 
-def ce(r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, desired=desired, lotteries=transform(lotteries_full), method="tk", beta=1, palpha=1):
+
+# Cumulative discounted payoff realised up to (but not including) the CE elicitation.
+# period1_label / period2_label are the realised branch labels from the data.
+def realized_zt( period1_label=None, period2_label=None):
+    zt = 0.0
+    if period1_label is not None:
+        zt += _parse_label(period1_label)
+    if period2_label is not None:
+        zt +=  _parse_label(period2_label)
+    return zt
+
+
+# Certainty equivalent given the set of parameters.
+# Z_t is the cumulative discounted payoff already realised; defaults to 0 (session 1).
+# Formula: ce = v^{-1}(V(L_j)) - Z_t
+
+def ce(r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, desired=desired, lotteries=transform(lotteries_full), method="tk", beta=1, palpha=1, Z_t=0):
 
     # Pass through all parameters so CE is computed at the current candidate point.
     evaluated_lotteries = evaluation(r=r, R=R, alpha=alpha, lamb=lamb, gamma=gamma, lotteries=lotteries, method=method, beta=beta, palpha=palpha)
@@ -331,25 +348,57 @@ def ce(r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, desired=desired, lotterie
 
     v = l["V"]
 
-    return u_inv(v, R, alpha, lamb)
+    return u_inv(v, R, alpha, lamb) - Z_t
 
 
 
-def ce_dict(r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, lotteries = transform(lotteries_full), method="tk", beta=1, palpha=1):
-
+def ce_dict(r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, lotteries=transform(lotteries_full), method="tk", beta=1, palpha=1):
+    """Return v^{-1}(V(L_j)) per lottery, without Z_t (base values for session 1)."""
     evaluated_lotteries = evaluation(r=r, R=R, alpha=alpha, lamb=lamb, gamma=gamma, lotteries=lotteries, method=method, beta=beta, palpha=palpha)
 
     return {i: u_inv(evaluated_lotteries[i]["V"], R, alpha, lamb) for i in lotteries}
 
 
-def ce_at_rounds(r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, desired=desired, lotteries=transform(lotteries_full), round=1, method="tk", beta=1, palpha=1):
+def ce_th_series(y, r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, lotteries=transform(lotteries_full), method="tk", beta=1, palpha=1):
+    """
+    Return a Series of theoretical CEs aligned with rows of y,
+    with Z_t already subtracted per row.
+    round < 15  : session 1, Z_t = 0
+    round == 15 : session 2, Z_t = period-1 payoff
+    round == 16 : session 3, Z_t = period-1 + period-2 payoff
+    """
+    base = ce_dict(r, gamma, alpha, lamb, R, lotteries=lotteries, method=method, beta=beta, palpha=palpha)
+    zt = y.apply(
+        lambda row: realized_zt(
+            period1_label=row["realized_period1_label"] if row["round_number"] >= 15 else None,
+            period2_label=row["realized_period2_label"] if row["round_number"] >= 16 else None,
+        ), axis=1
+    )
+    return y["lottery_id"].map(base) - zt
 
-    if round == 1:
-
-        return ce(r, gamma, alpha, lamb, R, desired, lotteries, method=method, beta=beta, palpha=palpha)
 
 
+# Different reference point candidates
 
+#Status quo
+def status_quo(lotteries):
+    return 0
+
+# Partial adaptation
+def partial_adaptation(lotteries, delta):
+    return
+# Forward looking
+def forward_looking(lotteries):
+    return 
+
+# Lagged expectation
+def lagged_expectation(lotteries):
+    return
+# Composite reference point
+def composite(lotteries, delta):
+    temp_weight = []*3
+    other_weight = 1 - np.sum(temp_weight)
+    return
 
 
 if __name__ == "__main__":

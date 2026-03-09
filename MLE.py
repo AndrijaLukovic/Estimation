@@ -72,13 +72,10 @@ def loglikelihood(params, y=None, lotteries=None, subjects=None, method=prob_wei
     # Setup individual error terms
     ksi_map = {subj: params[ksi_offset + i] for i, subj in enumerate(subjects)}  # Create a mapping from participant_label to their corresponding ksi_i value from the params vector.
 
-    # Compute the theoretical CE
-    ce_theoretical = f.ce_dict(r, gamma, alpha, lamb, R, lotteries=lotteries, method=method, beta=beta, palpha=palpha)
-
-    # Map the specification of ksi
+    # Compute the theoretical CE (Z_t subtraction handled inside ce_th_series)
     spreads = {lid: lotteries[lid]["spread"] for lid in lotteries}
     y = y[y["lottery_id"].isin(lotteries.keys())].copy()
-    y["ce_th"] = y["lottery_id"].map(ce_theoretical)
+    y["ce_th"] = f.ce_th_series(y, r, gamma, alpha, lamb, R, lotteries=lotteries, method=method, beta=beta, palpha=palpha)
     y["spread"] = y["lottery_id"].map(spreads)
     y["sigma"] = y["participant_label"].map(ksi_map) * y["spread"]
 
@@ -122,13 +119,10 @@ def loglikelihood_mixture(params, y=None, lotteries=None, subjects=None, method=
     # Setup individual error terms
     ksi_map = {subj: params[ksi_offset + i] for i, subj in enumerate(subjects)}  # Create a mapping from participant_label to their corresponding ksi_i value from the params vector.
 
-    # Compute the theoretical CE
-    ce_theoretical = f.ce_dict(r, gamma, alpha, lamb, R, lotteries=lotteries, method=method, beta=beta, palpha=palpha)
-
-    # Map the specification of ksi
+    # Compute the theoretical CE (Z_t subtraction handled inside ce_th_series)
     spreads = {lid: lotteries[lid]["spread"] for lid in lotteries}
     y = y[y["lottery_id"].isin(lotteries.keys())].copy()
-    y["ce_th"] = y["lottery_id"].map(ce_theoretical)
+    y["ce_th"] = f.ce_th_series(y, r, gamma, alpha, lamb, R, lotteries=lotteries, method=method, beta=beta, palpha=palpha)
     y["spread"] = y["lottery_id"].map(spreads)
     y["sigma"] = y["participant_label"].map(ksi_map) * y["spread"]
 
