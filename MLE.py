@@ -7,14 +7,25 @@ from lotteries import lotteries_full, one, all_high_stake, all_low_stake
 from main import get_observed_ce
 import openpyxl
 
+# Selection of probability weighter
 prob_weighter = "prelec"  # "tk" or "prelec"
+
+# Selection of mixture model or single estimation
+estimation_style = "single" #"mixture" or "single"
+
+cluster_number = 3
 
 # Structural parameter bounds — only the probability weighting bounds differ
 _shared_front = [(1e-4, 0.2), (0.5, 1.5), (1,3)]  # r, alpha, lamb
 _shared_R     = [(0,0)]                              # R (always last)
+_clsuter_range = [(0,1)]
 
-bounds_tk     = _shared_front + [(0.2, 1)]         + _shared_R  # + gamma
-bounds_prelec = _shared_front + [(1,1), (0.1, 0.8)] + _shared_R  # + beta, palpha
+if estimation_style == "single":
+    bounds_tk     = _shared_front + [(0.2, 1)]  + _shared_R  # + gamma
+    bounds_prelec = _shared_front + [(1,1), (0.1, 0.8)] + _shared_R  # + beta, palpha
+else:
+    bounds_tk     =  _shared_front + [(0.2, 1)]  + _clsuter_range * cluster_number + _shared_R
+    bounds_prelec =  _shared_front + [(1,1), (0.1, 0.8)] + _clsuter_range * cluster_number + _shared_R
 
 
 bounds = bounds_tk if prob_weighter == "tk" else bounds_prelec
@@ -74,6 +85,57 @@ def loglikelihood(params, y=None, lotteries=None, subjects=None, method=prob_wei
     # Compute the loglik for each observation and return the negative sum for minimization.
     log_lik = norm.logpdf(y["ce_observed"], loc=y["ce_th"], scale=y["sigma"])
     return -float(log_lik.sum())
+
+
+
+def loglikelihood_mixture(params, y=None, lotteries=None, subjects=None, method=prob_weighter):
+    """
+    Negative log-likelihood with individual error terms.
+
+    This function supports the estimation of mixture models.
+
+    TK:     params = [r, alpha, lamb, gamma, R,           ksi_1, ..., ksi_N]
+    Prelec: params = [r, alpha, lamb, beta, palpha, R,    ksi_1, ..., ksi_N]
+
+    subjects is the ordered list of participant_label values that maps
+    the ksi block to individual subjects.
+
+    method should be either "tk" or "prelec".
+    """
+    
+    # Get data ready
+    if y is None:
+        y = get_observed_ce(export_excel=False)
+    if lotteries is None:
+        lotteries = f.transform(lottery)
+    if subjects is None:
+        subjects = sorted(y["participant_label"].unique())
+    # Setup systematic parameters
+    if method == "tk":
+        r, alpha, lamb, gamma, R = params[:5]
+        beta, palpha = 1, 1   # defaults passed to ce_dict but unused by TK
+        ksi_offset = 5
+    elif method == "prelec":
+        r, alpha, lamb, beta, palpha, R = params[:6]
+        gamma = 0.61          # default passed to ce_dict but unused by Prelec
+        ksi_offset = 6
+    # Setup individual error terms
+    ksi_map = {subj: params[ksi_offset + i] for i, subj in enumerate(subjects)}  # Create a mapping from participant_label to their corresponding ksi_i value from the params vector.
+
+    # Compute the theoretical CE
+    ce_theoretical = f.ce_dict(r, gamma, alpha, lamb, R, lotteries=lotteries, method=method, beta=beta, palpha=palpha)
+
+    # Map the specification of ksi
+    spreads = {lid: lotteries[lid]["spread"] for lid in lotteries}
+    y = y[y["lottery_id"].isin(lotteries.keys())].copy()
+    y["ce_th"] = y["lottery_id"].map(ce_theoretical)
+    y["spread"] = y["lottery_id"].map(spreads)
+    y["sigma"] = y["participant_label"].map(ksi_map) * y["spread"]
+
+    # Compute the loglik for each observation and return the negative sum for minimization.
+    log_lik = norm.logpdf(y["ce_observed"], loc=y["ce_th"], scale=y["sigma"])
+    return -float(log_lik.sum())
+
 
 
 def run_multistart_mle(obj_func, n_starts=n_starts, param_bounds=None):
