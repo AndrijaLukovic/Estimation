@@ -95,3 +95,4 @@ if __name__ == "__main__":
         fh.write("participant_label\tksi\n")
         fh.write("\n".join(ksi_lines) + "\n")
     print("Individual ksi estimates written to ksi_estimates.txt")
+    

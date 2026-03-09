@@ -10,7 +10,7 @@ import openpyxl
 prob_weighter = "prelec"  # "tk" or "prelec"
 
 # Structural parameter bounds — only the probability weighting bounds differ
-_shared_front = [(1e-4, 0.1), (0.5, 1.5), (0.5,3)]  # r, alpha, lamb
+_shared_front = [(1e-4, 0.2), (0.5, 1.5), (1,3)]  # r, alpha, lamb
 _shared_R     = [(0,0)]                              # R (always last)
 
 bounds_tk     = _shared_front + [(0.2, 1)]         + _shared_R  # + gamma
