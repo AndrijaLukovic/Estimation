@@ -20,6 +20,8 @@ _shared_front = [(1e-4, 0.2), (0.5, 1.5), (1,3)]  # r, alpha, lamb
 _shared_R     = [(0,0)]                              # R (always last)
 _clsuter_range = [(0,1)]
 
+
+
 if estimation_style == "single":
     bounds_tk     = _shared_front + [(0.2, 1)]  + _shared_R  # + gamma
     bounds_prelec = _shared_front + [(1,1), (0.1, 0.8)] + _shared_R  # + beta, palpha
@@ -30,6 +32,7 @@ else:
 
 bounds = bounds_tk if prob_weighter == "tk" else bounds_prelec
 
+
 # Iteration time
 n_starts = 150
 
@@ -38,8 +41,10 @@ n_starts = 150
 lottery = lotteries_full
 # ────────────────────────────────────────────────────────────────────────────
 
+
 # random setup
 np.random.seed(5)
+
 
 def loglikelihood(params, y=None, lotteries=None, subjects=None, method=prob_weighter):
     """
