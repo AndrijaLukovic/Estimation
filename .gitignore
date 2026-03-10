@@ -1,5 +1,10 @@
 **/venv/
+**/.claude/
 **/__pycache__/
 **/.venv/
+**/Parameter recovery/*.csv
+**/Parameter recovery/__pycache__/
 pilot.csv
 pilot.xlsx
+/.claude/
+/__pycache__/

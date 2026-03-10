@@ -51,7 +51,7 @@ def run_multistart_mle_parallel(obj_func, n_starts=n_starts, param_bounds=None):
     return best_result
 
 
-def estimate_mle_parallel(n_starts=n_starts, param_bounds=bounds, y=None, lotteries=None):
+def estimate_mle_parallel(n_starts=n_starts, param_bounds=bounds, y=None, lotteries=None, method=prob_weighter):
     """
     Parallel multistart MLE. Identical specification to estimate_mle() in MLE.py
     but uses all CPU cores simultaneously.
@@ -67,7 +67,7 @@ def estimate_mle_parallel(n_starts=n_starts, param_bounds=bounds, y=None, lotter
     subjects = sorted(y["participant_label"].unique())
     full_bounds = list(param_bounds) + [(1e-3, None)] * len(subjects)
 
-    objective = partial(loglikelihood, y=y, lotteries=lotteries, subjects=subjects)
+    objective = partial(loglikelihood, y=y, lotteries=lotteries, subjects=subjects, method=method)
 
     result = run_multistart_mle_parallel(objective, n_starts=n_starts, param_bounds=full_bounds)
     if result is None:
