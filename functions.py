@@ -144,6 +144,8 @@ def dw(l, gamma=0.61, beta=1, palpha=1, method="tk"):
 
 
 
+
+
 # Value function, taking the list of present values and the list of physical proababilities as well as all the parameters
 
 def V(pvl, p, r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, method="tk", beta=1, palpha=1):

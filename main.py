@@ -18,8 +18,16 @@ def get_observed_ce(export_excel=False):
 if __name__ == "__main__":
     y = get_observed_ce(export_excel=True)
 
-    print(y[y["lottery_id"] == "lottery_1"]["ce_observed"])
+    print(y)
 
-    print(type(y))
+    print(sorted(y["participant_label"].unique()))
 
-    print(y["ce_observed"])
+    subjects = sorted(y["participant_label"].unique())
+
+    print({subj: i for i, subj in enumerate(subjects)})
+
+    # print(y[y["lottery_id"] == "lottery_1"]["ce_observed"])
+
+    # print(type(y))
+
+    # print(y["ce_observed"])
