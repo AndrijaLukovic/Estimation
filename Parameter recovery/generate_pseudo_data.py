@@ -34,11 +34,11 @@ TRUE_PARAMS = {
 #   a list  [ksi_1, ksi_2, ...]        — subjects are named sub_1, sub_2, …
 
 NUM_SUBJECTS  = 100
-KSI_VALUES = {f"sub_{i}": np.clip(np.random.normal(0.1, 0.1), 0.05, 0.5) for i in range(1, NUM_SUBJECTS+1)}
+KSI_VALUES = {f"sub_{i}": np.random.normal(0.5,0.1) for i in range(1, NUM_SUBJECTS+1)}
 
 
 # ── SETTINGS ──────────────────────────────────────────────────────────────────
-METHOD   = "prelec"            
+METHOD   = "tk"            
 LOTTERY  = lotteries_full 
 SEED     = 42
 _HERE    = os.path.dirname(os.path.abspath(__file__))
