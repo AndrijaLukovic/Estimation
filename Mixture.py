@@ -2,6 +2,9 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
 from scipy.stats import norm
+from scipy.special import logsumexp
+
+
 import functions as f
 from lotteries import lotteries_full, one, all_high_stake, all_low_stake
 from main import get_observed_ce
@@ -75,7 +78,7 @@ def mixture(thetas, pis, individual, method, c=1, y=None, lotteries=None, subjec
         
         y_subj = grouped_y.get_group(subj_label)
         
-        s = 0
+        log_terms = []
 
         for j in range(c):  # Changed to 'j' to avoid shadowing
             params = thetas[j]
@@ -95,23 +98,16 @@ def mixture(thetas, pis, individual, method, c=1, y=None, lotteries=None, subjec
             # Get theoretical CEs and map to the subset
             ce_theoretical = f.ce_dict(r, gamma, alpha, lamb, R, lotteries=lotteries, method=method, beta=beta, palpha=palpha)
             
-
-            # We use log-space for stability, then exp to add them in the mixture
-            log_pdf_vals = norm.logpdf(y_subj["ce_observed"], 
-                                      loc=y_subj["lottery_id"].map(ce_theoretical), 
-                                      scale=y_subj["sigma"])
+            log_likelihood_j = np.sum(norm.logpdf(y_subj["ce_observed"],
+                                          loc=y_subj["lottery_id"].map(ce_theoretical),
+                                          scale=y_subj["sigma"]))
             
-            # Individual likelihood for cluster j: Product of probabilities
-            # (exp of sum of logs)
-            likelihood_individual = np.exp(np.sum(log_pdf_vals))
-            
-            s += pi_j * likelihood_individual
+            log_terms.append(np.log(pi_j) + log_likelihood_j)
 
         # Add the log of the weighted sum to the total Log-Likelihood
         # We add a tiny epsilon (1e-100) to prevent log(0)
-        L += np.log(max(s, 1e-100))
+        L += logsumexp(log_terms) 
         
-    
     return L
 
 
