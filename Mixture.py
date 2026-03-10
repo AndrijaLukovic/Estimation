@@ -5,7 +5,7 @@ from scipy.stats import norm
 import functions as f
 from lotteries import lotteries_full, one, all_high_stake, all_low_stake
 from main import get_observed_ce
-import openpyxl
+
 
 
 # ── Lottery set to estimate on ──────────────────────────────────────────────
@@ -29,7 +29,7 @@ prob_weighter = "prelec"
 
 
 
-def mixture(thetas, pis, individual, clusters, method, c=1, y=None, lotteries=None, subjects=None):
+def mixture(thetas, pis, individual, method, c=1, y=None, lotteries=None, subjects=None):
     
     ksi = individual
     
@@ -66,13 +66,21 @@ def mixture(thetas, pis, individual, clusters, method, c=1, y=None, lotteries=No
 
     L = 0
 
-    for i in range(n):
+    # Group the data once outside the loop for speed
+    grouped_y = y.groupby("participant_label")
 
+    for subj_label in subjects:
+        
+        # Get only the data for THIS specific person
+        
+        y_subj = grouped_y.get_group(subj_label)
+        
         s = 0
 
-        for i in range(c):
+        for j in range(c):  # Changed to 'j' to avoid shadowing
+            params = thetas[j]
+            pi_j = pis[j]
 
-            params = thetas[i]
 
             if method == "tk":
                 r, alpha, lamb, gamma = params[:4]
@@ -81,21 +89,34 @@ def mixture(thetas, pis, individual, clusters, method, c=1, y=None, lotteries=No
             elif method == "prelec":
                 r, alpha, lamb, beta, palpha = params[:5]
                 gamma = 0.61          # default passed to ce_dict but unused by Prelec
-        
-            R = 0
 
+            R = 0 
+
+            # Get theoretical CEs and map to the subset
             ce_theoretical = f.ce_dict(r, gamma, alpha, lamb, R, lotteries=lotteries, method=method, beta=beta, palpha=palpha)
+            
 
-            y["ce_th"] = y["lottery_id"].map(ce_theoretical)
+            # We use log-space for stability, then exp to add them in the mixture
+            log_pdf_vals = norm.logpdf(y_subj["ce_observed"], 
+                                      loc=y_subj["lottery_id"].map(ce_theoretical), 
+                                      scale=y_subj["sigma"])
+            
+            # Individual likelihood for cluster j: Product of probabilities
+            # (exp of sum of logs)
+            likelihood_individual = np.exp(np.sum(log_pdf_vals))
+            
+            s += pi_j * likelihood_individual
 
-            likelihood_individual = np.prod(norm.pdf(y["ce_observed"], loc=y["ce_th"], scale=y["sigma"]))
+        # Add the log of the weighted sum to the total Log-Likelihood
+        # We add a tiny epsilon (1e-100) to prevent log(0)
+        L += np.log(max(s, 1e-100))
+        
+    
+    return L
 
-            s += pis[i] * likelihood_individual
-
-        L += np.log(s)
 
 
 
-        def EM(objective):
+def EM(objective):
 
-            pass
+    pass
