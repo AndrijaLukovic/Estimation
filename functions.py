@@ -386,27 +386,65 @@ def ce_th_series(y, r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, lotteries=tr
 
 
 
-# Different reference point candidates
+# ── Reference point candidates ────────────────────────────────────────────────
 
-#Status quo
-def status_quo(lotteries):
-    return 0
+def expected_payoff(lottery_outcomes):
+    """Expected total payoff of a lottery: Σ_j p_j * sum(payoffs in path j).
+    lottery_outcomes: the 'outcomes' dict from transform(), where each entry is
+    {j: {p: [0, z1, z2, ...]}}. stream[0] is always the t=0 placeholder (0).
+    """
+    total = 0.0
+    for path in lottery_outcomes.values():
+        p      = next(iter(path.keys()))
+        stream = next(iter(path.values()))
+        total += p * sum(stream[1:])   # skip the t=0 zero
+    return total
 
-# Partial adaptation
-def partial_adaptation(lotteries, delta):
-    return
-# Forward looking
-def forward_looking(lotteries):
-    return 
 
-# Lagged expectation
-def lagged_expectation(lotteries):
-    return
-# Composite reference point
-def composite(lotteries, delta):
-    temp_weight = []*3
-    other_weight = 1 - np.sum(temp_weight)
-    return
+def status_quo(Z_0=0.0):
+    """R^SQ(t) = Z_0  (anchored to the value at the start of the sequence)."""
+    return float(Z_0)
+
+
+def partial_adaptation(t, Z_sequence, delta=1.0):
+    """R^A(t) = Σ_{i=0}^{t} δ^{t-i} Z_i / Σ_{i=0}^{t} δ^{t-i}
+    Recursive: R^A(t) = (1-α_t)*R^A(t-1) + α_t*Z_t,  R^A(0) = Z_0.
+    Z_sequence : list [Z_0, Z_1, ..., Z_t]  (length t+1)
+    delta      : weighting parameter δ ∈ (0,1] (1 = equal weighting)
+    """
+    Z = np.asarray(Z_sequence[:t + 1], dtype=float)
+    if delta == 1.0:
+        return float(Z.mean())
+    weights = np.array([delta ** (t - i) for i in range(t + 1)])
+    return float(np.dot(weights, Z) / weights.sum())
+
+
+def lagged_expectation(t, EL_sequence, Z_0=0.0, delta=1.0):
+    """R^LE(t) = Σ_{i=0}^{t-1} δ^{t-1-i} E[L_i] / Σ_{i=0}^{t-1} δ^{t-1-i},  R^LE(0)=Z_0
+    EL_sequence : list [E[L_0], ..., E[L_{t-1}]]  (length t)
+    delta       : weighting parameter δ ∈ (0,1] (1 = equal weighting)
+    """
+    if t == 0:
+        return float(Z_0)
+    EL = np.asarray(EL_sequence[:t], dtype=float)
+    if delta == 1.0:
+        return float(EL.mean())
+    weights = np.array([delta ** (t - 1 - i) for i in range(t)])
+    return float(np.dot(weights, EL) / weights.sum())
+
+
+def forward_looking(EL_t):
+    """R^FE(t) = E[L_t]  (expectation of the current sublottery)."""
+    return float(EL_t)
+
+
+def composite(a1, a2, a3, RSQ, RA, RLE, RFE):
+    """R(t) = a1*R^SQ + a2*R^A + a3*R^LE + (1-a1-a2-a3)*R^FE
+    The forward-looking weight is residual: a4 = 1 - a1 - a2 - a3.
+    a4 is clipped at 0 so R stays well-defined even if weights sum > 1.
+    """
+    a4 = max(0.0, 1.0 - a1 - a2 - a3)
+    return a1 * RSQ + a2 * RA + a3 * RLE + a4 * RFE
 
 
 if __name__ == "__main__":
