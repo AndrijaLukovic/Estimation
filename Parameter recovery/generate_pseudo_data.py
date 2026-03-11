@@ -25,7 +25,7 @@ TRUE_PARAMS = {
     "gamma":  0.61,   
     "beta":   1.0,    
     "palpha": 0.65,  
-    "R":      0.0,    
+    "R":      0.0,   
 }
 
 # ── KSI VALUES ────────────────────────────────────────────────────────────────
@@ -33,13 +33,14 @@ TRUE_PARAMS = {
 #   a dict  {participant_label: ksi}   — you choose subject names
 #   a list  [ksi_1, ksi_2, ...]        — subjects are named sub_1, sub_2, …
 
-NUM_SUBJECTS  = 100
-KSI_VALUES = {f"sub_{i}": np.random.normal(0.5,0.1) for i in range(1, NUM_SUBJECTS+1)}
+NUM_SUBJECTS  = 150
+KSI_VALUES = {f"sub_{i}": np.random.normal(0.4,0.1) for i in range(1, NUM_SUBJECTS+1)}
 
 
 # ── SETTINGS ──────────────────────────────────────────────────────────────────
-METHOD   = "tk"            
-LOTTERY  = lotteries_full 
+METHOD   = "prelec"            
+LOTTERY  = lotteries_full
+ALL_SEEDS = [10,15,20,25,30, 35, 40, 45]
 SEED     = 42
 _HERE    = os.path.dirname(os.path.abspath(__file__))
 OUT_PATH = os.path.join(_HERE, "pseudo_data.csv")

@@ -23,6 +23,7 @@ from generate_pseudo_data import (
     METHOD,
     LOTTERY,
     SEED,
+    ALL_SEEDS
 )
 import functions as f
 from lotteries import lotteries_full
@@ -79,44 +80,62 @@ def run_recovery(
     return result, df, ksi_values
 
 
-def print_recovery_report(result, true_params, ksi_values, method=METHOD):
-    """Print a side-by-side comparison of true vs estimated parameters."""
+def _struct_names(method):
     if method == "tk":
-        struct_names  = ["r", "alpha", "lamb", "gamma", "R"]
-        true_struct   = [true_params[k] for k in struct_names]
-        ksi_offset    = 5
-    else:
-        struct_names  = ["r", "alpha", "lamb", "beta", "palpha", "R"]
-        true_struct   = [true_params[k] for k in struct_names]
-        ksi_offset    = 6
+        return ["r", "alpha", "lamb", "gamma", "R"], 5
+    return ["r", "alpha", "lamb", "beta", "palpha", "R"], 6
 
-    est_struct = result.x[:ksi_offset]
-    subjects   = sorted(ksi_values.keys())
-    est_ksi    = result.x[ksi_offset:]
-    true_ksi   = [ksi_values[s] for s in subjects]
 
-    print("\n" + "=" * 55)
-    print("parameter recovery results:")
-    print("=" * 55)
-    print(f"{'Parameter':<14} {'True':>10} {'Estimated':>12} {'Bias':>10}")
-    print("-" * 55)
-    for name, tv, ev in zip(struct_names, true_struct, est_struct):
-        print(f"{name:<14} {tv:>10.4f} {ev:>12.4f} {ev - tv:>10.4f}")
-    print("-" * 55)
-    print("Individual ksi:")
-    for subj, tv, ev in zip(subjects, true_ksi, est_ksi):
-        print(f"  {subj:<12} {tv:>10.4f} {ev:>12.4f} {ev - tv:>10.4f}")
-    print("=" * 55)
-    print(f"Best Log-Likelihood: {-result.fun:.4f}")
+def collect_recovery_row(result, true_params, method=METHOD, seed=SEED):
+    """Return a dict with per-parameter biases for one seed."""
+    names, ksi_offset = _struct_names(method)
+    row = {"seed": seed}
+    for name, tv, ev in zip(names, [true_params[k] for k in names], result.x[:ksi_offset]):
+        row[f"bias_{name}"] = ev - tv
+    row["log_likelihood"] = -result.fun
+    return row
+
+
+def print_summary_table(rows, method=METHOD):
+    """One table: each row = one seed, columns = bias per parameter + avg row."""
+    names, _ = _struct_names(method)
+    cw = 10
+    total_w = 6 + (len(names) + 1) * (cw + 1)
+    sep = "-" * total_w
+
+    print("\n" + "=" * total_w)
+    print("PARAMETER RECOVERY  (bias = estimated − true)")
+    print("=" * total_w)
+    print(" ".join([f"{'Seed':>6}"] + [f"{n:>{cw}}" for n in names] + [f"{'LogLik':>{cw}}"]))
+    print(sep)
+
+    bias_accum = {n: [] for n in names}
+    for row in rows:
+        parts = [f"{row['seed']:>6}"]
+        for n in names:
+            b = row[f"bias_{n}"]
+            bias_accum[n].append(b)
+            parts.append(f"{b:>{cw}.4f}")
+        parts.append(f"{row['log_likelihood']:>{cw}.4f}")
+        print(" ".join(parts))
+
+    print(sep)
+    avg_parts = [f"{'Avg':>6}"] + [f"{np.mean(bias_accum[n]):>{cw}.4f}" for n in names] + [f"{'':>{cw}}"]
+    print(" ".join(avg_parts))
+    print("=" * total_w)
 
 
 if __name__ == "__main__":
-    result, df, ksi_dict = run_recovery(
-        true_params=TRUE_PARAMS,
-        ksi_values=KSI_VALUES,
-        method=METHOD,
-        lottery=LOTTERY,
-        n_starts=N_STARTS,
-        seed=SEED,
-    )
-    print_recovery_report(result, TRUE_PARAMS, ksi_dict, method=METHOD)
+    rows = []
+    for s in ALL_SEEDS:
+        result, df, ksi_dict = run_recovery(
+            true_params=TRUE_PARAMS,
+            ksi_values=KSI_VALUES,
+            method=METHOD,
+            lottery=LOTTERY,
+            n_starts=N_STARTS,
+            seed=s,
+        )
+        rows.append(collect_recovery_row(result, TRUE_PARAMS, method=METHOD, seed=s))
+
+    print_summary_table(rows, method=METHOD)
