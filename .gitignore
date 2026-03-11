@@ -8,3 +8,4 @@ pilot.csv
 pilot.xlsx
 /.claude/
 /__pycache__/
+*.pyc
