@@ -22,10 +22,8 @@ lottery = lotteries_full
 prob_weighter = "prelec"
 
 
-
-def mixture(thetas, pis, individual, method, c=1, y=None, lotteries=None, subjects=None):
-    
-    ksi = individual
+'''
+def mixture(thetas, pis, ksi, method, c=1, y=None, lotteries=None, subjects=None):
     
     if y is None:
 
@@ -100,14 +98,27 @@ def mixture(thetas, pis, individual, method, c=1, y=None, lotteries=None, subjec
         L += logsumexp(log_terms) 
         
     return L
+'''
 
 
 
+def compute_log_likelihoods(thetas, ksi, method, c, subjects=None, y=None, lotteries=None):
 
-
-def compute_log_likelihoods(thetas, ksi, method, c, subjects, grouped_y, y, lotteries):
-    
     """Returns (n, c) matrix of log-likelihoods: log L_ij"""
+
+    assert len(thetas) == c, "The length of the thetas list of lists of parameters has to correspond to the number of clusters!"
+
+    if y is None:
+
+        y = get_observed_ce(export_excel=False)
+
+    if lotteries is None:
+
+        lotteries = f.transform(lottery)
+
+    if subjects is None:
+
+        subjects = sorted(y["participant_label"].unique())
 
     n = len(subjects)
 
@@ -115,7 +126,13 @@ def compute_log_likelihoods(thetas, ksi, method, c, subjects, grouped_y, y, lott
 
     y = y.copy()
 
+    spreads = {lid: lotteries[lid]["spread"] for lid in lotteries}
+
+    y["spread"] = y["lottery_id"].map(spreads)
+
     y["sigma"] = y["participant_label"].map(ksi_map) * y["spread"]
+
+    grouped_y = y.groupby("participant_label", observed=True)
 
     log_L = np.zeros((n, c))
 
