@@ -16,7 +16,7 @@ from main import get_observed_ce
 lottery = lotteries_full
 # ────────────────────────────────────────────────────────────────────────────
 
-### Choice of the method
+### Choice of the method "prelec" or "tk"
 prob_weighter = "prelec"
 
 
