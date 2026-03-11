@@ -22,6 +22,18 @@ lottery = lotteries_full
 prob_weighter = "prelec"
 
 
+# Number of clusters
+
+C = 2
+
+
+# Method
+
+method = "tk"
+
+
+
+
 '''
 def mixture(thetas, pis, ksi, method, c=1, y=None, lotteries=None, subjects=None):
     
@@ -102,7 +114,7 @@ def mixture(thetas, pis, ksi, method, c=1, y=None, lotteries=None, subjects=None
 
 
 
-def compute_log_likelihoods(thetas, ksi, method, c, subjects=None, y=None, lotteries=None):
+def compute_log_likelihoods(thetas, ksi, method=method, c=C, subjects=None, y=None, lotteries=None):
 
     """Returns (n, c) matrix of log-likelihoods: log L_ij"""
 
@@ -124,7 +136,7 @@ def compute_log_likelihoods(thetas, ksi, method, c, subjects=None, y=None, lotte
 
     ksi_map = {subj: ksi[i] for i, subj in enumerate(subjects)}
 
-    y = y.copy()
+    y = y[y["lottery_id"].isin(lotteries.keys())].copy()
 
     spreads = {lid: lotteries[lid]["spread"] for lid in lotteries}
 
@@ -175,7 +187,7 @@ def compute_log_likelihoods(thetas, ksi, method, c, subjects=None, y=None, lotte
 
 
 
-def em_mixture(thetas=None, pis=None, individual=None, method="prelec", c=1, y=None, lotteries=None, subjects=None, max_iter=100, tol=1e-6):
+def em_mixture(thetas=None, pis=None, ksi=None, subjects=None, method=method, c=C, y=None, lotteries=None, max_iter=100, tol=1e-6):
 
     if y is None:
 
@@ -219,14 +231,11 @@ def em_mixture(thetas=None, pis=None, individual=None, method="prelec", c=1, y=N
             
             raise ValueError(f"Unknown method: {method!r}")
 
-    
-    if individual is None:
+    if ksi is None:
 
         ksi = np.ones(n) * 0.1
 
-    else:
-        
-        ksi = individual
+    # ---------------------------------------- 
 
 
     # ---- EM loop ---- #
@@ -235,7 +244,7 @@ def em_mixture(thetas=None, pis=None, individual=None, method="prelec", c=1, y=N
     for iteration in range(max_iter):
 
         # E-step
-        log_L      = compute_log_likelihoods(thetas, ksi, method, c, subjects, grouped_y, y, lotteries)
+        log_L      = compute_log_likelihoods(thetas, ksi, method, c, subjects, y, lotteries)
         log_pi     = np.log(pis)
         log_joint  = log_L + log_pi[np.newaxis, :]
         log_sum    = logsumexp(log_joint, axis=1, keepdims=True)
@@ -263,7 +272,7 @@ def em_mixture(thetas=None, pis=None, individual=None, method="prelec", c=1, y=N
             def neg_weighted_ll_theta(params, j=j, r_j=r_j):
                 thetas_temp    = list(thetas)
                 thetas_temp[j] = params
-                log_L_temp     = compute_log_likelihoods(thetas_temp, ksi, method, c, subjects, grouped_y, y, lotteries)
+                log_L_temp     = compute_log_likelihoods(thetas_temp, ksi, method, c, subjects, y, lotteries)
                 return -np.sum(r_j * log_L_temp[:, j])
 
             result     = minimize(neg_weighted_ll_theta, thetas[j], method="L-BFGS-B", bounds=bounds)
@@ -271,10 +280,25 @@ def em_mixture(thetas=None, pis=None, individual=None, method="prelec", c=1, y=N
 
         # M-step: ksi
         def neg_weighted_ll_ksi(ksi_params):
-            log_L_temp = compute_log_likelihoods(thetas, ksi_params, method, c, subjects, grouped_y, y, lotteries)
+            log_L_temp = compute_log_likelihoods(thetas, ksi_params, method, c, subjects, y, lotteries)
             return -np.sum(r * log_L_temp)
 
         result = minimize(neg_weighted_ll_ksi, ksi, method="L-BFGS-B", bounds=[(1e-4, 5)] * n)
         ksi    = result.x
 
+    param_names = {"tk": ["r", "α", "λ", "γ"], "prelec": ["r", "α", "λ", "β", "pα"]}[method]
+
+    print(f"\n{'Cluster':<10} {'π':<8} " + "  ".join(f"{p:<8}" for p in param_names))   
+    print("-" * (10 + 8 + 10 * len(param_names)))
+    for j in range(c):
+        print(f"{j+1:<10} {pis[j]:<8.3f} " + "  ".join(f"{v:<8.4f}" for v in thetas[j]))
+
+    print(f"\nFinal LL: {ll:.4f}")
+
     return {"thetas": thetas, "pis": pis, "ksi": ksi, "log_likelihood": ll}
+
+
+
+if __name__ == "__main__":
+
+    em_mixture()

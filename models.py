@@ -4,14 +4,14 @@ import random
 
 from lotteries import lotteries_full, one
 
+
+
 from functions import transform
 
 
 lotteries_transformed = transform(lotteries_full)
 
-print(one.keys())
 
-print(one['lottery_1']['periods'])
 
 
 ### Definitions of Reference Points
@@ -21,17 +21,6 @@ print(one['lottery_1']['periods'])
 def rsq(lottery):
 
     return 0
-
-
-
-# Partial Adaptation
-# The inputs are the point in time t, the discount factor delta and the sequence of the realised cumulative payoffs x (x is a list)
-
-def rp_pa(t, delta, x):
-
-    return sum([delta**(t-i)*x[i] for i in range(0,t+1)])/sum([delta**(t-i) for i in range(0,t+1)])
-
-
 
 
 
