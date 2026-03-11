@@ -1294,7 +1294,105 @@ lotteries_full = {
 }
 
 
-
+test_lotteries = {
+    
+"lottery_ez1": {
+  "name": "Easy 1",
+  "outcome_number": 2,
+  "stake": "lo",
+  "max_payoff": 10,
+  "min_payoff": 6,
+  "description": "n/a",
+  "periods": {
+    "0": [
+      {
+        "label": "Start",
+        "probability": 1,
+        "from": None,
+        "abs_prob": 1
+      }
+    ],
+    "1": [
+      {
+        "label": "-£9",
+        "probability": 0.2,
+        "from": "Start",
+        "abs_prob": 0.2
+      },
+      {
+        "label": "+£9",
+        "probability": 0.8,
+        "from": "Start",
+        "abs_prob": 0.8
+      }
+    ],
+    "2": [
+      {
+        "label": "-£8",
+        "probability": 1,
+        "from": "-£9",
+        "abs_prob": 0.2
+      },
+      {
+        "label": "-£17",
+        "probability": 0.2,
+        "from": "+£9",
+        "abs_prob": 0.16
+      },
+      {
+        "label": "-£5",
+        "probability": 0.8,
+        "from": "+£9",
+        "abs_prob": 0.64
+      }
+    ],
+    "3": [
+      {
+        "label": "+£47",
+        "probability": 0.3,
+        "from": "-£8",
+        "parent": "-£9",
+        "abs_prob": 0.06
+      },
+      {
+        "label": "-£22 ",
+        "probability": 0.7,
+        "from": "-£8",
+        "parent": "-£9",
+        "abs_prob": 0.14
+      },
+      {
+        "label": "-£31",
+        "probability": 0.5,
+        "from": "-£17",
+        "parent": "+£9",
+        "abs_prob": 0.08
+      },
+      {
+        "label": "+£40",
+        "probability": 0.5,
+        "from": "-£17",
+        "parent": "+£9",
+        "abs_prob": 0.08
+      },
+      {
+        "label": "-£22",
+        "probability": 0.6,
+        "from": "-£5",
+        "parent": "+£9",
+        "abs_prob": 0.384
+      },
+      {
+        "label": "+£40",
+        "probability": 0.4,
+        "from": "-£5",
+        "parent": "+£9",
+        "abs_prob": 0.256
+      }
+    ]
+  }
+}
+}
 
 low_stake = [i for i, val in lotteries_full.items() if val['stake'] == 'lo']
 high_stake = [i for i, val in lotteries_full.items() if val['stake'] != 'lo']

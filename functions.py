@@ -175,17 +175,17 @@ def V(pvl, p, r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, method="tk", beta=
 # The function takes the original dictionary and returns a dictionary with all the outcome streams for each lottery together with the probabilities of the path
 # No parametric specification necessary, purely objective probabilities and the lotteries
 
+def _parse_payoff(label):
+    return int(label.replace('£', ''))
+
+
 def transform(lotteries):
 
     lotteries_v2 = {}
 
-    l = lotteries.keys()
-
-    for i in l:
+    for i, lottery in lotteries.items():
 
         a = {}
-
-        lottery = lotteries[i]
 
         a['name'] = lottery['name']
 
@@ -193,19 +193,25 @@ def transform(lotteries):
 
         o = lottery['periods']
 
-        last = o["3"]
-
-        n = len(o["3"])
+        last_period = max(int(k) for k in o.keys())
+        last = o[str(last_period)]
 
         outcomes = {}
 
-        for j in range(n):
+        for j, node in enumerate(last):
 
-            p = last[j]['abs_prob']
-    
-            stream = {p: [0, int(last[j]["parent"].replace('£', '')) if '£' in last[j]["parent"] else int(last[j]["parent"]), int(last[j]["from"].replace('£', '')) if '£' in last[j]["from"] else int(last[j]["from"]), int(last[j]["label"].replace('£', '')) if '£' in last[j]["label"] else int(last[j]["label"])]}
+            p = node['abs_prob']
 
-            outcomes[j] = stream
+            # Build payoff stream: [t0=0, t1, t2, ..., terminal]
+            # depth determines how many prior periods to trace back
+            stream_payoffs = [0]
+            if last_period >= 3:
+                stream_payoffs.append(_parse_payoff(node["parent"]))
+            if last_period >= 2:
+                stream_payoffs.append(_parse_payoff(node["from"]))
+            stream_payoffs.append(_parse_payoff(node["label"]))
+
+            outcomes[j] = {p: stream_payoffs}
 
         a['outcomes'] = outcomes
 
@@ -220,13 +226,9 @@ def transform2(lotteries):
 
     lotteries_v2 = {}
 
-    l = lotteries.keys()
-
-    for i in l:
+    for i, lottery in lotteries.items():
 
         a = {}
-
-        lottery = lotteries[i]
 
         a['name'] = lottery['name']
 
@@ -234,23 +236,27 @@ def transform2(lotteries):
 
         o = lottery['periods']
 
-        last = o["3"]
-
-        n = len(o["3"])
+        last_period = max(int(k) for k in o.keys())
+        last = o[str(last_period)]
 
         outcomes = {}
 
-        for j in range(n):
+        for j, node in enumerate(last):
 
-            p = last[j]['abs_prob']
-    
-            stream = {p: [0, int(last[j]["parent"].replace('£', '')) if '£' in last[j]["parent"] else int(last[j]["parent"]), int(last[j]["from"].replace('£', '')) if '£' in last[j]["from"] else int(last[j]["from"]), int(last[j]["label"].replace('£', '')) if '£' in last[j]["label"] else int(last[j]["label"])]}
+            p = node['abs_prob']
 
-            stream["label"] = last[j]["label"]
+            stream_payoffs = [0]
+            if last_period >= 3:
+                stream_payoffs.append(_parse_payoff(node["parent"]))
+            if last_period >= 2:
+                stream_payoffs.append(_parse_payoff(node["from"]))
+            stream_payoffs.append(_parse_payoff(node["label"]))
 
-            stream["from"] = last[j]["from"]
-
-            stream["parent"] = last[j]["parent"]
+            stream = {p: stream_payoffs}
+            stream["label"]  = node["label"]
+            stream["from"]   = node["from"]
+            if last_period >= 3:
+                stream["parent"] = node["parent"]
 
             outcomes[j] = stream
 
