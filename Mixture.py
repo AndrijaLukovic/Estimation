@@ -114,8 +114,6 @@ def compute_log_likelihoods(thetas, ksi, method=method, c=C, subjects=None, y=No
     Returns an (n, c) matrix where entry [i, j] is the total log-likelihood
     of subject i's observed CEs under cluster j's structural parameters.
 
-    All three sessions are handled jointly via a composite reference point:
-
       Session 1 (round_number < 15):  t=0, Z_t = 0
         Only the forward-looking component is active:
         R_l = (1 - a1 - a2 - a3) * E[L_l]
@@ -133,13 +131,7 @@ def compute_log_likelihoods(thetas, ksi, method=method, c=C, subjects=None, y=No
                         R^A  = partial_adaptation([0, Z_1, Z_2], delta),
                         R^LE = lagged_expectation([E[L_l], E[L_l]], delta),
                         R^FE = E[L_l])
-
-    delta controls memory decay in R^A and R^LE:
-      delta = 1  → equal weighting of all past observations (arithmetic mean)
-      delta → 0  → only the most recent observation matters
-
-    CE formula:  CE = u^{-1}(V(L; R_l)) - Z_t
-
+                                          
     Parameter vector per cluster:
       TK:     [r, alpha, lamb, gamma, a1, a2, a3, delta]         (8 params)
       Prelec: [r, alpha, lamb, beta, palpha, a1, a2, a3, delta]  (9 params)
