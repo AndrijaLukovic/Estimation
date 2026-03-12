@@ -9,3 +9,4 @@ pilot.xlsx
 /.claude/
 /__pycache__/
 *.pyc
+*.txt
