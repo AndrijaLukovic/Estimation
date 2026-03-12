@@ -1314,84 +1314,374 @@ test_lotteries = {
     ],
     "1": [
       {
-        "label": "-£9",
+        "label": "+£10",
+        "probability": 0.5,
+        "from": "Start",
+        "abs_prob": 0.5
+      },
+      {
+        "label": "+£6",
+        "probability": 0.5,
+        "from": "Start",
+        "abs_prob": 0.5
+      }
+    ],
+  }
+},
+
+
+"lottery_ez2": {
+  "name": "Easy 2",
+  "outcome_number": 3,
+  "stake": "lo",
+  "max_payoff": 10,
+  "min_payoff": 6,
+  "description": "n/a",
+  "periods": {
+    "0": [
+      {
+        "label": "Start",
+        "probability": 1,
+        "from": None,
+        "abs_prob": 1
+      }
+    ],
+    "1": [
+      {
+        "label": "+£10",
+        "probability": 0.4,
+        "from": "Start",
+        "abs_prob": 0.4
+      },
+      {
+        "label": "+£8",
         "probability": 0.2,
         "from": "Start",
         "abs_prob": 0.2
       },
+      {
+        "label": "+£6",
+        "probability": 0.4,
+        "from": "Start",
+        "abs_prob": 0.4
+      }
+    ],
+  }
+},
+
+"lottery_pw3": {
+  "name": "PW 3",
+  "outcome_number": 3,
+  "stake": "lo",
+  "max_payoff": 10,
+  "min_payoff": 6,
+  "description": "Expectation = 8. Relative to R=8, outcomes are +2, 0, -2. More mass at the reference point than EZ2.",
+  "periods": {
+    "0": [
+      {
+        "label": "Start",
+        "probability": 1,
+        "from": None,
+        "abs_prob": 1
+      }
+    ],
+    "1": [
+      {
+        "label": "+£10",
+        "probability": 0.3,
+        "from": "Start",
+        "abs_prob": 0.3
+      },
+      {
+        "label": "+£8",
+        "probability": 0.4,
+        "from": "Start",
+        "abs_prob": 0.4
+      },
+      {
+        "label": "+£6",
+        "probability": 0.3,
+        "from": "Start",
+        "abs_prob": 0.3
+      }
+    ]
+  }
+},
+
+"lottery_pw4": {
+  "name": "PW 4",
+  "outcome_number": 3,
+  "stake": "lo",
+  "max_payoff": 10,
+  "min_payoff": 6,
+  "description": "Expectation = 8. Relative to R=8, outcomes are +2, 0, -2. Even more mass at the reference point.",
+  "periods": {
+    "0": [
+      {
+        "label": "Start",
+        "probability": 1,
+        "from": None,
+        "abs_prob": 1
+      }
+    ],
+    "1": [
+      {
+        "label": "+£10",
+        "probability": 0.2,
+        "from": "Start",
+        "abs_prob": 0.2
+      },
+      {
+        "label": "+£8",
+        "probability": 0.6,
+        "from": "Start",
+        "abs_prob": 0.6
+      },
+      {
+        "label": "+£6",
+        "probability": 0.2,
+        "from": "Start",
+        "abs_prob": 0.2
+      }
+    ]
+  }
+},
+
+"lottery_la1": {
+  "name": "LA 1",
+  "outcome_number": 4,
+  "stake": "lo",
+  "max_payoff": 12,
+  "min_payoff": 4,
+  "description": "Expectation = 8. Total gain probability = 0.5, total loss probability = 0.5. Adds symmetric tails around R=8: +4 and -4.",
+  "periods": {
+    "0": [
+      {
+        "label": "Start",
+        "probability": 1,
+        "from": None,
+        "abs_prob": 1
+      }
+    ],
+    "1": [
+      {
+        "label": "+£12",
+        "probability": 0.1,
+        "from": "Start",
+        "abs_prob": 0.1
+      },
+      {
+        "label": "+£10",
+        "probability": 0.4,
+        "from": "Start",
+        "abs_prob": 0.4
+      },
+      {
+        "label": "+£6",
+        "probability": 0.4,
+        "from": "Start",
+        "abs_prob": 0.4
+      },
+      {
+        "label": "+£4",
+        "probability": 0.1,
+        "from": "Start",
+        "abs_prob": 0.1
+      }
+    ]
+  }
+},
+
+"lottery_la2": {
+  "name": "LA 2",
+  "outcome_number": 4,
+  "stake": "lo",
+  "max_payoff": 14,
+  "min_payoff": 2,
+  "description": "Expectation = 8. Total gain probability = 0.5, total loss probability = 0.5. Stronger symmetric tails around R=8: +6 and -6.",
+  "periods": {
+    "0": [
+      {
+        "label": "Start",
+        "probability": 1,
+        "from": None,
+        "abs_prob": 1
+      }
+    ],
+    "1": [
+      {
+        "label": "+£14",
+        "probability": 0.1,
+        "from": "Start",
+        "abs_prob": 0.1
+      },
+      {
+        "label": "+£10",
+        "probability": 0.4,
+        "from": "Start",
+        "abs_prob": 0.4
+      },
+      {
+        "label": "+£6",
+        "probability": 0.4,
+        "from": "Start",
+        "abs_prob": 0.4
+      },
+      {
+        "label": "+£2",
+        "probability": 0.1,
+        "from": "Start",
+        "abs_prob": 0.1
+      }
+    ]
+  }
+},
+
+"lottery_la3": {
+  "name": "LA 3",
+  "outcome_number": 4,
+  "stake": "lo",
+  "max_payoff": 14,
+  "min_payoff": 2,
+  "description": "Expectation = 8. Same support as LA2, but tail probabilities are only 0.05 each. Useful for seeing whether rare tail losses are overweighted or strongly penalized.",
+  "periods": {
+    "0": [
+      {
+        "label": "Start",
+        "probability": 1,
+        "from": None,
+        "abs_prob": 1
+      }
+    ],
+    "1": [
+      {
+        "label": "+£14",
+        "probability": 0.05,
+        "from": "Start",
+        "abs_prob": 0.05
+      },
+      {
+        "label": "+£10",
+        "probability": 0.45,
+        "from": "Start",
+        "abs_prob": 0.45
+      },
+      {
+        "label": "+£6",
+        "probability": 0.45,
+        "from": "Start",
+        "abs_prob": 0.45
+      },
+      {
+        "label": "+£2",
+        "probability": 0.05,
+        "from": "Start",
+        "abs_prob": 0.05
+      }
+    ]
+  }
+},
+
+"lottery_cv1": {
+  "name": "CV 1",
+  "outcome_number": 2,
+  "stake": "lo",
+  "max_payoff": 9,
+  "min_payoff": 7,
+  "description": "Expectation = 8. Relative to R=8, outcomes are +1 and -1. Narrow spread.",
+  "periods": {
+    "0": [
+      {
+        "label": "Start",
+        "probability": 1,
+        "from": None,
+        "abs_prob": 1
+      }
+    ],
+    "1": [
       {
         "label": "+£9",
-        "probability": 0.8,
+        "probability": 0.5,
         "from": "Start",
-        "abs_prob": 0.8
-      }
-    ],
-    "2": [
+        "abs_prob": 0.5
+      },
       {
-        "label": "-£8",
+        "label": "+£7",
+        "probability": 0.5,
+        "from": "Start",
+        "abs_prob": 0.5
+      }
+    ]
+  }
+},
+
+"lottery_cv2": {
+  "name": "CV 2",
+  "outcome_number": 2,
+  "stake": "lo",
+  "max_payoff": 11,
+  "min_payoff": 5,
+  "description": "Expectation = 8. Relative to R=8, outcomes are +3 and -3. Medium spread.",
+  "periods": {
+    "0": [
+      {
+        "label": "Start",
         "probability": 1,
-        "from": "-£9",
-        "abs_prob": 0.2
-      },
-      {
-        "label": "-£17",
-        "probability": 0.2,
-        "from": "+£9",
-        "abs_prob": 0.16
-      },
-      {
-        "label": "-£5",
-        "probability": 0.8,
-        "from": "+£9",
-        "abs_prob": 0.64
+        "from": None,
+        "abs_prob": 1
       }
     ],
-    "3": [
+    "1": [
       {
-        "label": "+£47",
-        "probability": 0.3,
-        "from": "-£8",
-        "parent": "-£9",
-        "abs_prob": 0.06
-      },
-      {
-        "label": "-£22 ",
-        "probability": 0.7,
-        "from": "-£8",
-        "parent": "-£9",
-        "abs_prob": 0.14
-      },
-      {
-        "label": "-£31",
+        "label": "+£11",
         "probability": 0.5,
-        "from": "-£17",
-        "parent": "+£9",
-        "abs_prob": 0.08
+        "from": "Start",
+        "abs_prob": 0.5
       },
       {
-        "label": "+£40",
+        "label": "+£5",
         "probability": 0.5,
-        "from": "-£17",
-        "parent": "+£9",
-        "abs_prob": 0.08
+        "from": "Start",
+        "abs_prob": 0.5
+      }
+    ]
+  }
+},
+
+"lottery_cv3": {
+  "name": "CV 3",
+  "outcome_number": 2,
+  "stake": "lo",
+  "max_payoff": 12,
+  "min_payoff": 4,
+  "description": "Expectation = 8. Relative to R=8, outcomes are +4 and -4. Wide spread.",
+  "periods": {
+    "0": [
+      {
+        "label": "Start",
+        "probability": 1,
+        "from": None,
+        "abs_prob": 1
+      }
+    ],
+    "1": [
+      {
+        "label": "+£12",
+        "probability": 0.5,
+        "from": "Start",
+        "abs_prob": 0.5
       },
       {
-        "label": "-£22",
-        "probability": 0.6,
-        "from": "-£5",
-        "parent": "+£9",
-        "abs_prob": 0.384
-      },
-      {
-        "label": "+£40",
-        "probability": 0.4,
-        "from": "-£5",
-        "parent": "+£9",
-        "abs_prob": 0.256
+        "label": "+£4",
+        "probability": 0.5,
+        "from": "Start",
+        "abs_prob": 0.5
       }
     ]
   }
 }
+
+
 }
 
 low_stake = [i for i, val in lotteries_full.items() if val['stake'] == 'lo']

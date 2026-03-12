@@ -17,18 +17,18 @@ estimation_style = "single" #"mixture" or "single"
 cluster_number = 3
 
 # Structural parameter bounds — only the probability weighting bounds differ
-_shared_front = [(1e-4, 0.2), (0.5, 1.5), (1,3)]  # r, alpha, lamb
-_shared_R     = [(0,0)]                              # R (always last)
-_clsuter_range = [(0,1)]
+_shared_front = [(1e-4, 0.2), (0.5, 1.5), (1, 3)]  # r, alpha, lamb
+_w_bound      = [(1, 1)]                             # w: forward-looking fraction R_l = w*E[L_l] (Phase 1)
+_clsuter_range = [(0,0)]
 
 
 
 if estimation_style == "single":
-    bounds_tk     = _shared_front + [(0.2, 1)]  + _shared_R  # + gamma
-    bounds_prelec = _shared_front + [(1,1), (0.1, 0.8)] + _shared_R  # + beta, palpha
+    bounds_tk     = _shared_front + [(0.2, 1)]          + _w_bound  # + gamma, w
+    bounds_prelec = _shared_front + [(1,1), (0.1, 0.8)] + _w_bound  # + beta, palpha, w
 else:
-    bounds_tk     =  _shared_front + [(0.2, 1)]  + _clsuter_range * cluster_number + _shared_R
-    bounds_prelec =  _shared_front + [(1,1), (0.1, 0.8)] + _clsuter_range * cluster_number + _shared_R
+    bounds_tk     = _shared_front + [(0.2, 1)]          + _clsuter_range * cluster_number + _w_bound
+    bounds_prelec = _shared_front + [(1,1), (0.1, 0.8)] + _clsuter_range * cluster_number + _w_bound
 
 
 bounds = bounds_tk if prob_weighter == "tk" else bounds_prelec
@@ -51,44 +51,51 @@ def loglikelihood(params, y=None, lotteries=None, subjects=None, method=prob_wei
     """
     Negative log-likelihood with individual error terms.
 
-    TK:     params = [r, alpha, lamb, gamma, R,           ksi_1, ..., ksi_N]
-    Prelec: params = [r, alpha, lamb, beta, palpha, R,    ksi_1, ..., ksi_N]
+    Phase 1 (single session, Z_0=0):
+      TK:     params = [r, alpha, lamb, gamma, w,           ksi_1, ..., ksi_N]
+      Prelec: params = [r, alpha, lamb, beta, palpha, w,    ksi_1, ..., ksi_N]
+
+    w is the forward-looking fraction: R_l = w * E[L_l].
+    w=0 → no reference point; w=1 → full forward-looking reference point.
+
+    Phase 2+ (multi-session): replace w with a1, a2, a3 decomposition.
 
     subjects is the ordered list of participant_label values that maps
     the ksi block to individual subjects.
-
-    method should be either "tk" or "prelec".
     """
-    # Get data ready
     if y is None:
         y = get_observed_ce(export_excel=False)
     if lotteries is None:
         lotteries = f.transform(lottery)
     if subjects is None:
         subjects = sorted(y["participant_label"].unique())
-    # Setup systematic parameters
+
     if method == "tk":
-        r, alpha, lamb, gamma, R = params[:5]
-        beta, palpha = 1, 1   # defaults passed to ce_dict but unused by TK
+        r, alpha, lamb, gamma, w = params[:5]
+        beta, palpha = 1, 1
         ksi_offset = 5
     elif method == "prelec":
-        r, alpha, lamb, beta, palpha, R = params[:6]
-        gamma = 0.61          # default passed to ce_dict but unused by Prelec
+        r, alpha, lamb, beta, palpha, w = params[:6]
+        gamma = 0.61
         ksi_offset = 6
-    # Setup individual error terms
-    ksi_map = {subj: params[ksi_offset + i] for i, subj in enumerate(subjects)}  # Create a mapping from participant_label to their corresponding ksi_i value from the params vector.
 
-    # Compute the theoretical CE
-    ce_theoretical = f.ce_dict(r, gamma, alpha, lamb, R, lotteries=lotteries, method=method, beta=beta, palpha=palpha)
+    ksi_map = {subj: params[ksi_offset + i] for i, subj in enumerate(subjects)}
 
-    # Map the specification of ksi
+    # Phase 1: R_l = w * E[L_l] per lottery
+    ce_theoretical = {}
+    for lid, lot in lotteries.items():
+        EL_0 = f.expected_payoff(lot["outcomes"])
+        R_l  = w * EL_0
+        ev   = f.evaluation(r=r, R=R_l, alpha=alpha, lamb=lamb, gamma=gamma,
+                            lotteries={lid: lot}, method=method, beta=beta, palpha=palpha)
+        ce_theoretical[lid] = f.u_inv(ev[lid]["V"], R_l, alpha, lamb)
+
     spreads = {lid: lotteries[lid]["spread"] for lid in lotteries}
     y = y[y["lottery_id"].isin(lotteries.keys())].copy()
     y["ce_th"] = y["lottery_id"].map(ce_theoretical)
     y["spread"] = y["lottery_id"].map(spreads)
-    y["sigma"] = y["participant_label"].map(ksi_map) * y["spread"]
+    y["sigma"]  = y["participant_label"].map(ksi_map) * y["spread"]
 
-    # Compute the loglik for each observation and return the negative sum for minimization.
     log_lik = norm.logpdf(y["ce_observed"], loc=y["ce_th"], scale=y["sigma"])
     return -float(log_lik.sum())
 
@@ -154,10 +161,10 @@ def estimate_mle(n_starts=n_starts, param_bounds=bounds, y=None, lotteries=None)
 
 def format_results(result, method=prob_weighter):
     if method == "tk":
-        param_names = ["r", "Alpha", "Lambda", "Gamma", "R"]
+        param_names  = ["r", "Alpha", "Lambda", "Gamma", "w"]
         n_structural = 5
     else:  # prelec
-        param_names = ["r", "Alpha", "Lambda", "Beta", "Prelec Alpha", "R"]
+        param_names  = ["r", "Alpha", "Lambda", "Beta", "Prelec Alpha", "w"]
         n_structural = 6
     return pd.DataFrame(
         {"Parameter": param_names, "Estimate": result.x[:n_structural]}

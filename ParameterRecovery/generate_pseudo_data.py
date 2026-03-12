@@ -14,18 +14,19 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 import pandas as pd
 import functions as f
-from lotteries import lotteries_full
+from lotteries import lotteries_full, test_lotteries
 
 
 # ── TRUE STRUCTURAL PARAMETERS ────────────────────────────────────────────────
 TRUE_PARAMS = {
-    "r":      0.09,   
-    "alpha":  0.88,   
-    "lamb":   2.25,   
-    "gamma":  0.61,   
-    "beta":   1.0,    
-    "palpha": 0.65,  
-    "R":      0.0,   
+    "r":      0.03,
+    "alpha":  0.88,
+    "lamb":   2.25,
+    "gamma":  0.61,
+    "beta":   1.0,
+    "palpha": 0.65,
+    "w":      1.0,    # forward-looking fraction: R_l = w * E[L_l]
+    # Phase 2+: replace w with a1, a2, a3 decomposition
 }
 
 # ── KSI VALUES ────────────────────────────────────────────────────────────────
@@ -38,9 +39,9 @@ KSI_VALUES = {f"sub_{i}": np.random.normal(0.4,0.1) for i in range(1, NUM_SUBJEC
 
 
 # ── SETTINGS ──────────────────────────────────────────────────────────────────
-METHOD   = "prelec"            
-LOTTERY  = lotteries_full
-ALL_SEEDS = [10,15,20,25,30, 35, 40, 45]
+METHOD   = "tk"            
+LOTTERY  = test_lotteries #lotteries_full
+ALL_SEEDS = [10,15,20,25]
 SEED     = 42
 _HERE    = os.path.dirname(os.path.abspath(__file__))
 OUT_PATH = os.path.join(_HERE, "pseudo_data.csv")
@@ -71,18 +72,15 @@ def generate_pseudo_data(
     lotteries_t = f.transform(lottery)
     spreads     = {lid: lotteries_t[lid]["spread"] for lid in lotteries_t}
 
-    # Theoretical CEs for every lottery (Z_t = 0, session 1)
-    base_ce = f.ce_dict(
-        r=p["r"],
-        gamma=p["gamma"],
-        alpha=p["alpha"],
-        lamb=p["lamb"],
-        R=p["R"],
-        lotteries=lotteries_t,
-        method=method,
-        beta=p["beta"],
-        palpha=p["palpha"],
-    )
+    # Phase 1: R_l = w * E[L_l] per lottery
+    base_ce = {}
+    for lid, lot in lotteries_t.items():
+        EL_0 = f.expected_payoff(lot["outcomes"])
+        R_l  = p["w"] * EL_0
+        ev   = f.evaluation(r=p["r"], R=R_l, alpha=p["alpha"], lamb=p["lamb"],
+                            gamma=p["gamma"], lotteries={lid: lot}, method=method,
+                            beta=p["beta"], palpha=p["palpha"])
+        base_ce[lid] = f.u_inv(ev[lid]["V"], R_l, p["alpha"], p["lamb"])
 
     rows = []
     for subj, ksi in ksi_values.items():

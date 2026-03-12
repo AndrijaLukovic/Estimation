@@ -26,12 +26,12 @@ from generate_pseudo_data import (
     ALL_SEEDS
 )
 import functions as f
-from lotteries import lotteries_full
+from lotteries import lotteries_full, test_lotteries
 from MLE import estimate_mle, format_results, bounds_tk, bounds_prelec
 from MLE_parallel import estimate_mle_parallel
 
 # ── SETTINGS (recovery-specific) ──────────────────────────────────────────────
-N_STARTS = 150            # multistart restarts for MLE
+N_STARTS = 20            # multistart restarts for MLE
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -46,12 +46,6 @@ def run_recovery(
     """
     Generate pseudo data and estimate parameters. Returns (result, df).
     """
-    if true_params is None:
-        true_params = TRUE_PARAMS
-    if ksi_values is None:
-        ksi_values = KSI_VALUES
-    if lottery is None:
-        lottery = lotteries_full
 
     # Normalise ksi_values to dict
     if isinstance(ksi_values, (list, np.ndarray)):
@@ -82,8 +76,8 @@ def run_recovery(
 
 def _struct_names(method):
     if method == "tk":
-        return ["r", "alpha", "lamb", "gamma", "R"], 5
-    return ["r", "alpha", "lamb", "beta", "palpha", "R"], 6
+        return ["r", "alpha", "lamb", "gamma", "w"], 5
+    return ["r", "alpha", "lamb", "beta", "palpha", "w"], 6
 
 
 def collect_recovery_row(result, true_params, method=METHOD, seed=SEED):
@@ -114,7 +108,8 @@ def print_summary_table(rows, method=METHOD):
         parts = [f"{row['seed']:>6}"]
         for n in names:
             b = row[f"bias_{n}"]
-            bias_accum[n].append(b)
+            b_abs = np.abs(row[f"bias_{n}"])
+            bias_accum[n].append(b_abs)
             parts.append(f"{b:>{cw}.4f}")
         parts.append(f"{row['log_likelihood']:>{cw}.4f}")
         print(" ".join(parts))

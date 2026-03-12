@@ -257,7 +257,7 @@ def em_mixture(thetas=None, pis=None, ksi=None, subjects=None, method=method, c=
         pis = r.mean(axis=0)
 
         # M-step: cluster params
-        bounds_tk     = [(0.01, 2), (0.01, 2), (0.01, 10), (0.01, 2)]
+        bounds_tk     = [(0.01, 0.1), (0.2, 1), (1, 3), (0.2, 1)]
         bounds_prelec = [(0.01, 2), (0.01, 2), (0.01, 10), (0.01, 5), (0.01, 2)]
         bounds = bounds_tk if method == "tk" else bounds_prelec
 
