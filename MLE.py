@@ -18,7 +18,7 @@ cluster_number = 3
 
 # Structural parameter bounds — only the probability weighting bounds differ
 _shared_front = [(1e-4, 0.2), (0.5, 1.5), (1, 3)]  # r, alpha, lamb
-_w_bound      = [(1, 1)]                             # w: forward-looking fraction R_l = w*E[L_l] (Phase 1)
+_w_bound      = [(0,0)]                             # w: forward-looking fraction R_l = w*E[L_l] (Phase 1)
 _clsuter_range = [(0,0)]
 
 

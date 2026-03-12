@@ -35,7 +35,7 @@ TRUE_PARAMS = {
 #   a list  [ksi_1, ksi_2, ...]        — subjects are named sub_1, sub_2, …
 
 NUM_SUBJECTS  = 150
-KSI_VALUES = {f"sub_{i}": max(1e-4, np.random.normal(0.1,0.05)) for i in range(1, NUM_SUBJECTS+1)}
+KSI_VALUES = {f"sub_{i}": max(1e-4, np.random.normal(0.19,0.106)) for i in range(1, NUM_SUBJECTS+1)}
 
 
 # ── SETTINGS ──────────────────────────────────────────────────────────────────
