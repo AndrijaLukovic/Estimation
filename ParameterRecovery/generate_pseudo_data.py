@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 import pandas as pd
 import functions as f
-from lotteries import lotteries_full, test_lotteries
+from lotteries import lotteries_full, test_lotteries, para_recov
 
 
 # ── TRUE STRUCTURAL PARAMETERS ────────────────────────────────────────────────
@@ -25,7 +25,7 @@ TRUE_PARAMS = {
     "gamma":  0.61,
     "beta":   1.0,
     "palpha": 0.65,
-    "w":      1.0,    # forward-looking fraction: R_l = w * E[L_l]
+    "w":      0,    # forward-looking fraction: R_l = w * E[L_l]
     # Phase 2+: replace w with a1, a2, a3 decomposition
 }
 
@@ -35,12 +35,12 @@ TRUE_PARAMS = {
 #   a list  [ksi_1, ksi_2, ...]        — subjects are named sub_1, sub_2, …
 
 NUM_SUBJECTS  = 150
-KSI_VALUES = {f"sub_{i}": np.random.normal(0.4,0.1) for i in range(1, NUM_SUBJECTS+1)}
+KSI_VALUES = {f"sub_{i}": max(1e-4, np.random.normal(0.1,0.05)) for i in range(1, NUM_SUBJECTS+1)}
 
 
 # ── SETTINGS ──────────────────────────────────────────────────────────────────
-METHOD   = "tk"            
-LOTTERY  = test_lotteries #lotteries_full
+METHOD   = "prelec"            
+LOTTERY  = para_recov #lotteries_full
 ALL_SEEDS = [10,15,20,25]
 SEED     = 42
 _HERE    = os.path.dirname(os.path.abspath(__file__))

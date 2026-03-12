@@ -30,9 +30,28 @@ from lotteries import lotteries_full, test_lotteries
 from MLE import estimate_mle, format_results, bounds_tk, bounds_prelec
 from MLE_parallel import estimate_mle_parallel
 
+prob_weighter = "prelec"  # "tk" or "prelec"
+estimation_style = "single" #"mixture" or "single"
+cluster_number = 3
+
 # ── SETTINGS (recovery-specific) ──────────────────────────────────────────────
-N_STARTS = 20            # multistart restarts for MLE
+N_STARTS = 100            # multistart restarts for MLE
+
 # ─────────────────────────────────────────────────────────────────────────────
+# Structural parameter bounds — only the probability weighting bounds differ
+_shared_front = [(1e-4, 0.2), (0.5, 1.5), (1, 3)]  # r, alpha, lamb
+_w_bound      = [(0, 0)]                             # w: forward-looking fraction R_l = w*E[L_l] (Phase 1)
+_clsuter_range = [(0,0)]
+
+if estimation_style == "single":
+    bounds_tk     = _shared_front + [(0.2, 1)]          + _w_bound  # + gamma, w
+    bounds_prelec = _shared_front + [(1,1), (0.1, 0.8)] + _w_bound  # + beta, palpha, w
+else:
+    bounds_tk     = _shared_front + [(0.2, 1)]          + _clsuter_range * cluster_number + _w_bound
+    bounds_prelec = _shared_front + [(1,1), (0.1, 0.8)] + _clsuter_range * cluster_number + _w_bound
+
+
+bounds = bounds_tk if prob_weighter == "tk" else bounds_prelec
 
 
 def run_recovery(

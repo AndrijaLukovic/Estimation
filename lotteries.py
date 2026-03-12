@@ -1293,81 +1293,7 @@ lotteries_full = {
 
 }
 
-
 test_lotteries = {
-    
-"lottery_ez1": {
-  "name": "Easy 1",
-  "outcome_number": 2,
-  "stake": "lo",
-  "max_payoff": 10,
-  "min_payoff": 6,
-  "description": "n/a",
-  "periods": {
-    "0": [
-      {
-        "label": "Start",
-        "probability": 1,
-        "from": None,
-        "abs_prob": 1
-      }
-    ],
-    "1": [
-      {
-        "label": "+£10",
-        "probability": 0.5,
-        "from": "Start",
-        "abs_prob": 0.5
-      },
-      {
-        "label": "+£6",
-        "probability": 0.5,
-        "from": "Start",
-        "abs_prob": 0.5
-      }
-    ],
-  }
-},
-
-
-"lottery_ez2": {
-  "name": "Easy 2",
-  "outcome_number": 3,
-  "stake": "lo",
-  "max_payoff": 10,
-  "min_payoff": 6,
-  "description": "n/a",
-  "periods": {
-    "0": [
-      {
-        "label": "Start",
-        "probability": 1,
-        "from": None,
-        "abs_prob": 1
-      }
-    ],
-    "1": [
-      {
-        "label": "+£10",
-        "probability": 0.4,
-        "from": "Start",
-        "abs_prob": 0.4
-      },
-      {
-        "label": "+£8",
-        "probability": 0.2,
-        "from": "Start",
-        "abs_prob": 0.2
-      },
-      {
-        "label": "+£6",
-        "probability": 0.4,
-        "from": "Start",
-        "abs_prob": 0.4
-      }
-    ],
-  }
-},
 
 "lottery_pw3": {
   "name": "PW 3",
@@ -1497,7 +1423,7 @@ test_lotteries = {
   "outcome_number": 4,
   "stake": "lo",
   "max_payoff": 14,
-  "min_payoff": 2,
+  "min_payoff": -6,
   "description": "Expectation = 8. Total gain probability = 0.5, total loss probability = 0.5. Stronger symmetric tails around R=8: +6 and -6.",
   "periods": {
     "0": [
@@ -1522,13 +1448,13 @@ test_lotteries = {
         "abs_prob": 0.4
       },
       {
-        "label": "+£6",
+        "label": "-£6",
         "probability": 0.4,
         "from": "Start",
         "abs_prob": 0.4
       },
       {
-        "label": "+£2",
+        "label": "-£2",
         "probability": 0.1,
         "from": "Start",
         "abs_prob": 0.1
@@ -1542,7 +1468,7 @@ test_lotteries = {
   "outcome_number": 4,
   "stake": "lo",
   "max_payoff": 14,
-  "min_payoff": 2,
+  "min_payoff": -6,
   "description": "Expectation = 8. Same support as LA2, but tail probabilities are only 0.05 each. Useful for seeing whether rare tail losses are overweighted or strongly penalized.",
   "periods": {
     "0": [
@@ -1567,13 +1493,13 @@ test_lotteries = {
         "abs_prob": 0.45
       },
       {
-        "label": "+£6",
+        "label": "-£6",
         "probability": 0.45,
         "from": "Start",
         "abs_prob": 0.45
       },
       {
-        "label": "+£2",
+        "label": "-£2",
         "probability": 0.05,
         "from": "Start",
         "abs_prob": 0.05
@@ -1620,8 +1546,8 @@ test_lotteries = {
   "outcome_number": 2,
   "stake": "lo",
   "max_payoff": 11,
-  "min_payoff": 5,
-  "description": "Expectation = 8. Relative to R=8, outcomes are +3 and -3. Medium spread.",
+  "min_payoff": -5,
+  "description": "2-period mixed. Gain path [+7, +4] → PV>0; Loss path [-3, -2] → PV<0. Medium spread, activates lamb and r.",
   "periods": {
     "0": [
       {
@@ -1633,15 +1559,29 @@ test_lotteries = {
     ],
     "1": [
       {
-        "label": "+£11",
+        "label": "+£7",
         "probability": 0.5,
         "from": "Start",
         "abs_prob": 0.5
       },
       {
-        "label": "+£5",
+        "label": "-£3",
         "probability": 0.5,
         "from": "Start",
+        "abs_prob": 0.5
+      }
+    ],
+    "2": [
+      {
+        "label": "+£4",
+        "probability": 1,
+        "from": "+£7",
+        "abs_prob": 0.5
+      },
+      {
+        "label": "-£2",
+        "probability": 1,
+        "from": "-£3",
         "abs_prob": 0.5
       }
     ]
@@ -1653,8 +1593,8 @@ test_lotteries = {
   "outcome_number": 2,
   "stake": "lo",
   "max_payoff": 12,
-  "min_payoff": 4,
-  "description": "Expectation = 8. Relative to R=8, outcomes are +4 and -4. Wide spread.",
+  "min_payoff": -6,
+  "description": "2-period mixed. Gain path [+8, +4] → PV>0; Loss path [-4, -2] → PV<0. Wide spread, activates lamb and r.",
   "periods": {
     "0": [
       {
@@ -1666,15 +1606,76 @@ test_lotteries = {
     ],
     "1": [
       {
-        "label": "+£12",
+        "label": "+£8",
         "probability": 0.5,
         "from": "Start",
         "abs_prob": 0.5
       },
       {
-        "label": "+£4",
+        "label": "-£4",
         "probability": 0.5,
         "from": "Start",
+        "abs_prob": 0.5
+      }
+    ],
+    "2": [
+      {
+        "label": "+£4",
+        "probability": 1,
+        "from": "+£8",
+        "abs_prob": 0.5
+      },
+      {
+        "label": "-£2",
+        "probability": 1,
+        "from": "-£4",
+        "abs_prob": 0.5
+      }
+    ]
+  }
+},
+
+"lottery_cv4": {
+  "name": "CV 4",
+  "outcome_number": 2,
+  "stake": "lo",
+  "max_payoff": -6,
+  "min_payoff": -12,
+  "description": "All-loss 2-period. Path 1 [-8, -4] → PV<0; Path 2 [-4, -2] → PV<0. Both paths in loss domain, strongly activates lamb.",
+  "periods": {
+    "0": [
+      {
+        "label": "Start",
+        "probability": 1,
+        "from": None,
+        "abs_prob": 1
+      }
+    ],
+    "1": [
+      {
+        "label": "-£8",
+        "probability": 0.5,
+        "from": "Start",
+        "abs_prob": 0.5
+      },
+      {
+        "label": "-£4",
+        "probability": 0.5,
+        "from": "Start",
+        "abs_prob": 0.5
+      }
+    ],
+    "2": [
+      {
+        "label": "-£4",
+        "probability": 1,
+        "from": "-£8",
+        "abs_prob": 0.5
+      },
+      {
+        "label": "-£2",
+        "probability": 1,
+        "from": "-£4",
         "abs_prob": 0.5
       }
     ]
@@ -1690,3 +1691,5 @@ high_stake = [i for i, val in lotteries_full.items() if val['stake'] != 'lo']
 
 all_low_stake = {k: lotteries_full[k] for k in low_stake}
 all_high_stake = {k: lotteries_full[k] for k in high_stake}
+
+para_recov = {**test_lotteries, **lotteries_full}
