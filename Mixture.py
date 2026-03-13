@@ -108,19 +108,39 @@ def mixture(thetas, pis, ksi, method, c=1, y=None, lotteries=None, subjects=None
     return L
 '''
 
+def _s_to_a(s1, s2, s3):
+    """Stick-breaking: (s1,s2,s3) ∈ [0,1]^3  →  (a1,a2,a3) with a1+a2+a3 ≤ 1."""
+    a1 = s1
+    a2 = s2 * (1.0 - s1)
+    a3 = s3 * (1.0 - s1) * (1.0 - s2)
+    return a1, a2, a3
+
+
+def _a_to_s(a1, a2, a3):
+    """Inverse stick-breaking: (a1,a2,a3) with sum ≤ 1  →  (s1,s2,s3) ∈ [0,1]^3."""
+    s1 = a1
+    rem1 = 1.0 - a1
+    s2 = a2 / rem1 if rem1 > 1e-12 else 0.0
+    rem2 = rem1 * (1.0 - s2)
+    s3 = a3 / rem2 if rem2 > 1e-12 else 0.0
+    return s1, s2, s3
+
+
 def _cluster_ll(j, params, method, n, EL_arr, t_arr, Z1_arr, Z2_arr,
                 Zt_arr, si_arr, sig_arr, obs_arr, lotteries, y):
 
         if method == "tk":
-            r, alpha, lamb, gamma, a1, a2, a3, delta = params[:8]
+            r, alpha, lamb, gamma, s1, s2, s3, delta = params[:8]
             beta, palpha = 1, 1
         elif method == "prelec":
-            r, alpha, lamb, beta, palpha, a1, a2, a3, delta = params[:9]
+            r, alpha, lamb, beta, palpha, s1, s2, s3, delta = params[:9]
             gamma = 0.61
         else:
             raise ValueError(f"Unknown method: {method!r}")
 
-        a4 = max(0.0, 1.0 - a1 - a2 - a3)
+        # Stick-breaking: enforce a1+a2+a3 ≤ 1 using (s1,s2,s3) ∈ [0,1]^3
+        a1, a2, a3 = _s_to_a(s1, s2, s3)
+        a4 = 1.0 - a1 - a2 - a3    # always ≥ 0 by construction
 
         # ── Vectorised R_l for every row ──────────────────────────────────────
         # Closed-form expansions of partial_adaptation and lagged_expectation
@@ -365,10 +385,12 @@ def em_mixture(thetas=None, pis=None, ksi=None, subjects=None, method=method, c=
             noise_tk  = np.array([0.01, 0.05, 0.10, 0.05, 0.05, 0.05, 0.05, 0.05])
             lo_tk     = np.array([1e-4, 0.5,  1.0,  0.2,  0.0,  0.0,  0.0,  0.0])
             hi_tk     = np.array([0.2,  1.5,  3.0,  1.0,  1.0,  1.0,  1.0,  1.0])
-            thetas = [
-                np.clip(base_tk + np.random.randn(8) * noise_tk, lo_tk, hi_tk)
-                for _ in range(c)
-            ]
+            def _init_tk():
+                th = np.clip(base_tk + np.random.randn(8) * noise_tk, lo_tk, hi_tk)
+                # Convert sampled a1,a2,a3 (indices 4,5,6) to s-space
+                th[4], th[5], th[6] = _a_to_s(th[4], th[5], th[6])
+                return th
+            thetas = [_init_tk() for _ in range(c)]
 
         elif method == "prelec":
             # Parameter order: [r, alpha, lamb, beta, palpha, a1, a2, a3, delta]
@@ -377,10 +399,12 @@ def em_mixture(thetas=None, pis=None, ksi=None, subjects=None, method=method, c=
             noise_p = np.array([0.01, 0.05, 0.10, 0.0, 0.05, 0.05, 0.05, 0.05, 0.05])
             lo_p    = np.array([1e-4, 0.5,  1.0,  1.0, 0.1,  0.0,  0.0,  0.0, 0.0])
             hi_p    = np.array([0.2,  1.5,  3.0,  1.0, 0.8,  1.0,  1.0,  1.0, 1.0])
-            thetas = [
-                np.clip(base_p + np.random.randn(9) * noise_p, lo_p, hi_p)
-                for _ in range(c)
-            ]
+            def _init_p():
+                th = np.clip(base_p + np.random.randn(9) * noise_p, lo_p, hi_p)
+                # Convert sampled a1,a2,a3 (indices 5,6,7) to s-space
+                th[5], th[6], th[7] = _a_to_s(th[5], th[6], th[7])
+                return th
+            thetas = [_init_p() for _ in range(c)]
 
         else:
             raise ValueError(f"Unknown method: {method!r}")
@@ -471,6 +495,16 @@ def em_mixture(thetas=None, pis=None, ksi=None, subjects=None, method=method, c=
 
     n_iter    = iteration + 1
     converged = abs(ll - prev_ll) < tol
+
+    # Convert optimised s-params back to interpretable a-params
+    if method == "tk":
+        i1, i2, i3 = 4, 5, 6
+    else:
+        i1, i2, i3 = 5, 6, 7
+    for j in range(c):
+        th = np.array(thetas[j], dtype=float)
+        th[i1], th[i2], th[i3] = _s_to_a(th[i1], th[i2], th[i3])
+        thetas[j] = th
 
     # ---- Summary ---- #
     param_names = {
