@@ -7,7 +7,7 @@ import os
 GlobalMethod = "prelec"
 GlobalLottery = lotteries.para_recov
 GlobalCluster = 2
-GlobalStarts = os.cpu_count() - 1
+GlobalStarts = 8
 GlobalTol = 1e-4
 GlobalInterMax = 100
 

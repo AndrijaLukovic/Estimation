@@ -24,14 +24,12 @@ Typical usage:
         n_restarts=8, method="prelec", c=2, y=df, lotteries=lotteries_t
     )
 
-IMPORTANT (Windows / spawn):
-    All code that creates a ProcessPoolExecutor must be protected by
-    `if __name__ == "__main__":` to avoid infinite worker-spawning on Windows.
 """
 
 import contextlib
 import io
 import os
+import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from GlobalSettings import GlobalMethod, GlobalLottery, GlobalCluster, GlobalStarts, GlobalTol, GlobalPrelecBounds, GlobalTKBounds, GlobalInterMax
 
@@ -53,13 +51,7 @@ from main import get_observed_ce
 
 def _compute_single_cluster_log_L(j, params, thetas_frozen, ksi,
                                    method_arg, c, subjects, y_df, lotteries):
-    """
-    Compute the (n,) log-likelihood vector for cluster j only,
-    holding all other clusters fixed at thetas_frozen.
 
-    This avoids recomputing every cluster inside the M-step objective — only
-    the column for the cluster being optimised needs to be re-evaluated.
-    """
     thetas_temp    = list(thetas_frozen)
     thetas_temp[j] = params
     # compute_log_likelihoods returns (n, C); we only need column j
@@ -106,29 +98,33 @@ def _restart_worker(args):
     """
     Run one full serial EM from a random initialisation.
 
-    Stdout is suppressed so parallel workers do not interleave output.
-    Returns the result dict for comparison in the main process.
+    Captures stdout into a buffer and returns it alongside the result so the
+    main process can print per-iteration diagnostics once the worker completes.
 
     args tuple:
-        seed      – integer seed for np.random (controls EM initialisation)
-        method    – "tk" or "prelec"
-        c         – number of clusters
-        y_df      – already-filtered CE DataFrame
-        lotteries – transformed lotteries dict
-        max_iter  – EM iteration cap
-        tol       – convergence tolerance
+        seed       – integer seed for np.random (controls EM initialisation)
+        method     – "tk" or "prelec"
+        c          – number of clusters
+        y_df       – already-filtered CE DataFrame
+        lotteries  – transformed lotteries dict
+        max_iter   – EM iteration cap
+        tol        – convergence tolerance
+        restart_id – 1-based restart index shown in progress prefix
     """
     from Mixture import em_mixture   # local import avoids circular issues at spawn
 
-    seed, method_arg, c, y_df, lotteries, max_iter, tol = args
+    seed, method_arg, c, y_df, lotteries, max_iter, tol, restart_id = args
     np.random.seed(seed)
 
-    with contextlib.redirect_stdout(io.StringIO()):
+    t0  = time.time()
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
         result = em_mixture(
             method=method_arg, c=c, y=y_df, lotteries=lotteries,
             max_iter=max_iter, tol=tol,
         )
-    return result
+    elapsed = time.time() - t0
+    return result, buf.getvalue(), restart_id, elapsed
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -336,8 +332,8 @@ def run_em_multistart(
     seeds = rng.integers(0, 2**31, size=n_restarts).tolist()
 
     worker_args = [
-        (seed, method, c, y, lotteries, max_iter, tol)
-        for seed in seeds
+        (seed, method, c, y, lotteries, max_iter, tol, i + 1)
+        for i, seed in enumerate(seeds)
     ]
 
     best_result = None
@@ -345,21 +341,28 @@ def run_em_multistart(
     completed   = 0
 
     print(f"Running {n_restarts} EM restarts in parallel (C={c}, method={method!r})...")
+    print(f"  Output prints as each restart finishes.\n", flush=True)
 
     with ProcessPoolExecutor(max_workers=n_workers) as executor:
         futures = {executor.submit(_restart_worker, a): i
                    for i, a in enumerate(worker_args)}
         for future in as_completed(futures):
             completed += 1
-            result = future.result()
-            ll     = result["log_likelihood"]
+            result, log_output, restart_id, elapsed = future.result()
+            ll = result["log_likelihood"]
+
+            # Print the captured per-iteration log with restart prefix
+            prefix = f"[R{restart_id:02d}]"
+            for line in log_output.splitlines():
+                print(f"  {prefix} {line}", flush=True)
+            print(f"  {prefix} DONE in {elapsed:.1f}s | LL = {ll:.4f}", flush=True)
+
             if ll > best_ll:
                 best_ll     = ll
                 best_result = result
-                print(f"  [{completed}/{n_restarts}] New best LL: {best_ll:.4f}")
+                print(f"  >>> [{completed}/{n_restarts}] New best LL: {best_ll:.4f}\n", flush=True)
             else:
-                print(f"  [{completed}/{n_restarts}] LL = {ll:.4f}",
-                      end="\r", flush=True)
+                print(f"      [{completed}/{n_restarts}] completed\n", flush=True)
 
     if best_result is None:
         raise RuntimeError("All EM restarts failed to return a result.")

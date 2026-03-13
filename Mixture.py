@@ -142,137 +142,111 @@ def compute_log_likelihoods(thetas, ksi, method=method, c=C, subjects=None, y=No
 
     if y is None:
         y = get_observed_ce(export_excel=False)
-
     if lotteries is None:
         lotteries = f.transform(lottery)
-
     if subjects is None:
         subjects = sorted(y["participant_label"].unique())
 
     n = len(subjects)
-
-    # Map each subject to their noise parameter ksi
-    ksi_map = {subj: ksi[i] for i, subj in enumerate(subjects)}
+    subj_index = {s: i for i, s in enumerate(subjects)}
 
     y = y[y["lottery_id"].isin(lotteries.keys())].copy()
-
     spreads = {lid: lotteries[lid]["spread"] for lid in lotteries}
-
     y["spread"] = y["lottery_id"].map(spreads)
 
-    # sigma_i = ksi_i * spread_l  (subject-specific noise scaled by lottery range)
-    y["sigma"] = y["participant_label"].map(ksi_map) * y["spread"]
+    # ── Precompute per-row quantities that don't depend on cluster params ────
+    # EL: expected payoff of each lottery — same for every row with that lottery_id
+    EL_map = {lid: f.expected_payoff(lotteries[lid]["outcomes"]) for lid in lotteries}
+    y["_EL"] = y["lottery_id"].map(EL_map)
 
-    grouped_y = y.groupby("participant_label", observed=True)
+    # Session indicator: t=0 (s1), t=1 (s2), t=2 (s3)
+    s2 = y["round_number"] == 15
+    s3 = y["round_number"] >= 16
+    y["_t"] = s2.astype(int) + s3.astype(int)
+
+    # Realised payoffs — vectorized label parsing; 0 where not yet observed
+    def _parse_col(col):
+        return pd.to_numeric(
+            col.str.replace("£", "", regex=False), errors="coerce"
+        ).fillna(0).astype(int)
+
+    y["_Z1"] = np.where(s2 | s3, _parse_col(y["realized_period1_label"]), 0)
+    y["_Z2"] = np.where(s3,      _parse_col(y["realized_period2_label"]), 0)
+    y["_Zt"] = y["_Z1"] + y["_Z2"]
+
+    # Subject integer index per row (for np.add.at accumulation)
+    y["_si"] = y["participant_label"].map(subj_index)
+
+    # sigma = ksi_i * spread_l  (same across clusters for a given ksi)
+    ksi_arr  = np.array([ksi[subj_index[s]] for s in y["participant_label"]])
+    y["_sigma"] = ksi_arr * y["spread"].values
+
+    # Cache key: uniquely determines R_l for any fixed cluster params
+    # (lottery_id, t, Z1, Z2) → same EL, same RA, same RLE → same R_l
+    y["_ckey"] = list(zip(y["lottery_id"], y["_t"], y["_Z1"], y["_Z2"]))
+
+    # Numpy arrays for hot-path computation
+    EL_arr  = y["_EL"].values.astype(float)
+    t_arr   = y["_t"].values.astype(float)
+    Z1_arr  = y["_Z1"].values.astype(float)
+    Z2_arr  = y["_Z2"].values.astype(float)
+    Zt_arr  = y["_Zt"].values.astype(float)
+    si_arr  = y["_si"].values
+    sig_arr = y["_sigma"].values
+    obs_arr = y["ce_observed"].values.astype(float)
 
     log_L = np.zeros((n, c))
 
     for j, params in enumerate(thetas):
 
         if method == "tk":
-            # TK weighting: unpack structural params + reference-point weights + memory factor
             r, alpha, lamb, gamma, a1, a2, a3, delta = params[:8]
-            beta, palpha = 1, 1          # unused by TK but required by evaluation()
-
+            beta, palpha = 1, 1
         elif method == "prelec":
-            # Single-parameter Prelec (beta fixed to 1 via bounds): unpack accordingly
             r, alpha, lamb, beta, palpha, a1, a2, a3, delta = params[:9]
-            gamma = 0.61                 # unused by Prelec but required by evaluation()
-
+            gamma = 0.61
         else:
             raise ValueError(f"Unknown method: {method!r}")
 
+        a4 = max(0.0, 1.0 - a1 - a2 - a3)
 
-        for i, subj_label in enumerate(subjects):
+        # ── Vectorised R_l for every row ──────────────────────────────────────
+        # Closed-form expansions of partial_adaptation and lagged_expectation
+        # for t ∈ {0, 1, 2} (three sessions only).
+        #
+        # t=0: RA=0,  RLE=0            → R_l = a4*EL
+        # t=1: RA = Z1/(δ+1),  RLE=EL  → R_l = a2*Z1/(δ+1) + (a3+a4)*EL
+        # t=2: RA = (δ·Z1+Z2)/(δ²+δ+1), RLE=EL
+        #           → R_l = a2*(δ·Z1+Z2)/(δ²+δ+1) + (a3+a4)*EL
+        RA  = np.zeros(len(y))
+        m1  = t_arr == 1
+        m2  = t_arr == 2
+        RA[m1] = Z1_arr[m1] / (delta + 1.0)
+        RA[m2] = (delta * Z1_arr[m2] + Z2_arr[m2]) / (delta**2 + delta + 1.0)
+        RLE = np.where(t_arr >= 1, EL_arr, 0.0)   # EL for s2/s3, 0 for s1
+        R_l = a2 * RA + a3 * RLE + a4 * EL_arr    # RSQ=0 always
 
-            if subj_label not in grouped_y.groups:
-                continue
+        # ── Cached evaluation → ce_th_base ───────────────────────────────────
+        # Calls f.evaluation() once per unique (lottery_id, t, Z1, Z2) group
+        # instead of once per observation.  For session 1 this reduces calls
+        # from n_subjects × n_lotteries down to n_lotteries alone.
+        ce_th_base = np.empty(len(y))
+        cache      = {}
+        for key, idx in y.groupby("_ckey", sort=False).groups.items():
+            if key not in cache:
+                lid = key[0]
+                rl  = float(R_l[idx[0]])
+                ev  = f.evaluation(r=r, R=rl, alpha=alpha, lamb=lamb,
+                                   gamma=gamma, lotteries={lid: lotteries[lid]},
+                                   method=method, beta=beta, palpha=palpha)
+                cache[key] = f.u_inv(ev[lid]["V"], rl, alpha, lamb)
+            ce_th_base[idx] = cache[key]
 
-            y_subj = grouped_y.get_group(subj_label)
+        ce_th = ce_th_base - Zt_arr
 
-            ce_th_vals  = []   # theoretical CEs for this subject under cluster j
-            ce_obs_vals = []   # corresponding observed CEs
-            sigma_vals  = []   # corresponding noise scales
-
-            # Iterate row-by-row because the reference point is observation-specific:
-            # Z_t depends on which lottery was played AND how its path was realised,
-            # so it differs across lotteries within the same session.
-            for _, row in y_subj.iterrows():
-
-                lid = row["lottery_id"]
-                if lid not in lotteries:
-                    continue
-
-                lot = lotteries[lid]
-
-                # Expected total payoff of this lottery (sum over paths of p * sum(payoffs))
-                # Used as the forward-looking and lagged-expectation reference component
-                EL = f.expected_payoff(lot["outcomes"])
-
-                rn = row["round_number"]
-
-                if rn < 15:
-                    # ── Session 1 ────────────────────────────────────────────────
-                    # No past realisations yet.
-                    # R^SQ = 0, R^A = 0, R^LE = 0 (all collapse to starting wealth).
-                    # Only the forward-looking component R^FE = E[L_l] is active.
-                    t      = 0
-                    Z_seq  = [0.0]   # only starting wealth
-                    EL_seq = []      # no past sessions → lagged_expectation returns Z_0 = 0
-                    Z_t    = 0.0
-
-                elif rn == 15:
-                    # ── Session 2 ────────────────────────────────────────────────
-                    # Participant has observed the period-1 payoff Z_1 for this lottery.
-                    Z1     = f._parse_label(row["realized_period1_label"])
-                    t      = 1
-                    Z_seq  = [0.0, float(Z1)]
-                    EL_seq = [EL]    # one past session; lagged expectation = E[L_l]
-                    Z_t    = float(Z1)
-
-                else:
-                    # ── Session 3 ────────────────────────────────────────────────
-                    # Participant has observed period-1 payoff Z_1 and period-2 payoff Z_2.
-                    Z1 = f._parse_label(row["realized_period1_label"])
-                    # Guard against missing period-2 label (should not occur after data.dropna,
-                    # but handled gracefully just in case)
-                    Z2 = (f._parse_label(row["realized_period2_label"])
-                          if pd.notna(row.get("realized_period2_label")) else 0)
-                    t      = 2
-                    Z_seq  = [0.0, float(Z1), float(Z2)]
-                    EL_seq = [EL, EL]  # two past sessions, both for the same lottery
-                    Z_t    = float(Z1) + float(Z2)
-
-                # ── Composite reference point ─────────────────────────────────────
-                # R^SQ  = status quo = starting wealth (always 0 in session 1)
-                # R^A   = partial adaptation to realised payoffs, decayed by delta
-                # R^LE  = lagged expectation of past lottery E[L], decayed by delta
-                # R^FE  = forward-looking expectation of the current lottery
-                # a4    = 1 - a1 - a2 - a3  (residual weight, clipped ≥ 0 in composite())
-                RSQ = f.status_quo(0.0)
-                RA  = f.partial_adaptation(t, Z_seq, delta)
-                RLE = f.lagged_expectation(t, EL_seq, 0.0, delta)
-                RFE = f.forward_looking(EL)
-                R_l = f.composite(a1, a2, a3, RSQ, RA, RLE, RFE)
-
-                # ── Theoretical CE ────────────────────────────────────────────────
-                # Evaluate the full lottery at reference point R_l, then invert utility
-                # and subtract the already-realised cumulative payoff Z_t.
-                ev    = f.evaluation(r=r, R=R_l, alpha=alpha, lamb=lamb,
-                                     gamma=gamma, lotteries={lid: lot},
-                                     method=method, beta=beta, palpha=palpha)
-                ce_th = f.u_inv(ev[lid]["V"], R_l, alpha, lamb) - Z_t
-
-                ce_th_vals .append(ce_th)
-                ce_obs_vals.append(row["ce_observed"])
-                sigma_vals .append(row["sigma"])
-
-            if ce_th_vals:
-                log_L[i, j] = np.sum(norm.logpdf(
-                    np.array(ce_obs_vals),
-                    loc=np.array(ce_th_vals),
-                    scale=np.array(sigma_vals)
-                ))
+        # ── Accumulate log-likelihood per subject ─────────────────────────────
+        log_pdf = norm.logpdf(obs_arr, loc=ce_th, scale=sig_arr)
+        np.add.at(log_L[:, j], si_arr, log_pdf)
 
     return log_L
 
@@ -355,48 +329,53 @@ def em_mixture(thetas=None, pis=None, ksi=None, subjects=None, method=method, c=
     # appears inside compute_log_likelihoods().
     prev_ll = -np.inf
 
+    print(f"\n{'─'*55}")
+    print(f"  EM start  |  C={c}  method={method!r}  n={n}  tol={tol}")
+    print(f"{'─'*55}")
+
     for iteration in range(max_iter):
 
+        print(f"\n[Iter {iteration+1:>3}] E-step  — computing log-likelihoods ...", flush=True)
+
         # ── E-step ───────────────────────────────────────────────────────────────
-        # Compute posterior responsibility resp[i, j] = P(subject i in cluster j | data).
-        # Uses log-sum-exp trick for numerical stability.
         log_L     = compute_log_likelihoods(thetas, ksi, method, c, subjects, y, lotteries)
         log_pi    = np.log(pis)
         log_joint = log_L + log_pi[np.newaxis, :]
         log_sum   = logsumexp(log_joint, axis=1, keepdims=True)
         resp      = np.exp(log_joint - log_sum)   # (n, c) responsibility matrix
 
-        ll = np.sum(log_sum)
-        print(f"Iter {iteration:3d} | LL = {ll:.4f}")
+        ll = float(np.sum(log_sum))
+
+        # Print per-cluster soft assignment sizes
+        soft_n = resp.sum(axis=0)
+        assign_str = "  ".join(f"C{j+1}: {soft_n[j]:.1f} (π={pis[j]:.3f})" for j in range(c))
+        print(f"         LL = {ll:.4f}   Improvement = {ll - prev_ll:+.4f}   [{assign_str}]", flush=True)
 
         if abs(ll - prev_ll) < tol:
-            print("Converged.")
+            print(f"\n  Converged after {iteration+1} iteration(s)  (|ΔLL| < {tol})")
             break
         prev_ll = ll
 
         # ── M-step: mixing weights ────────────────────────────────────────────────
-        # pi_j = average responsibility for cluster j across all subjects
         pis = resp.mean(axis=0)
 
         # ── M-step: cluster structural + reference-point parameters ──────────────
-        # Bounds for TK: [r, alpha, lamb, gamma, a1, a2, a3, delta]
         bounds_tk = [
-            (1e-4, 0.2),  # r:     discount rate
-            (0.5,  1.5),  # alpha: utility curvature
-            (1.0,  3.0),  # lamb:  loss aversion
-            (0.2,  1.0),  # gamma: TK probability weighting
-            (0.0,  1.0),  # a1:    status quo weight
-            (0.0,  1.0),  # a2:    partial adaptation weight
-            (0.0,  1.0),  # a3:    lagged expectation weight
-            (0.0,  1.0),  # delta: memory decay (0 = only recent, 1 = equal weights)
+            (1e-4, 0.2),  # r
+            (0.5,  1.5),  # alpha
+            (1.0,  3.0),  # lamb
+            (0.2,  1.0),  # gamma
+            (0.0,  1.0),  # a1
+            (0.0,  1.0),  # a2
+            (0.0,  1.0),  # a3
+            (0.0,  1.0),  # delta
         ]
-        # Bounds for Prelec: [r, alpha, lamb, beta, palpha, a1, a2, a3, delta]
         bounds_prelec = [
             (1e-4, 0.2),  # r
             (0.5,  1.5),  # alpha
             (1.0,  3.0),  # lamb
-            (1.0,  1.0),  # beta:   fixed at 1 (single-parameter Prelec)
-            (0.1,  0.8),  # palpha: Prelec elevation parameter
+            (1.0,  1.0),  # beta (fixed)
+            (0.1,  0.8),  # palpha
             (0.0,  1.0),  # a1
             (0.0,  1.0),  # a2
             (0.0,  1.0),  # a3
@@ -405,7 +384,8 @@ def em_mixture(thetas=None, pis=None, ksi=None, subjects=None, method=method, c=
         bounds = bounds_tk if method == "tk" else bounds_prelec
 
         for j in range(c):
-            resp_j = resp[:, j]   # responsibility weights for cluster j
+            print(f"[Iter {iteration+1:>3}] M-step  — cluster {j+1}/{c}: Estimating preference parameters...", flush=True)
+            resp_j = resp[:, j]
 
             def neg_weighted_ll_theta(params, j=j, resp_j=resp_j):
                 thetas_temp    = list(thetas)
@@ -415,14 +395,18 @@ def em_mixture(thetas=None, pis=None, ksi=None, subjects=None, method=method, c=
 
             result    = minimize(neg_weighted_ll_theta, thetas[j], method="L-BFGS-B", bounds=bounds)
             thetas[j] = result.x
+            print(f"         cluster {j+1} done  (converged={result.success})", flush=True)
 
         # ── M-step: individual noise parameters ksi ──────────────────────────────
+        print(f"[Iter {iteration+1:>3}] M-step  — Estimating inidividual errors ({n} subjects) ...", flush=True)
+
         def neg_weighted_ll_ksi(ksi_params):
             log_L_temp = compute_log_likelihoods(thetas, ksi_params, method, c, subjects, y, lotteries)
             return -np.sum(resp * log_L_temp)
 
         result = minimize(neg_weighted_ll_ksi, ksi, method="L-BFGS-B", bounds=[(1e-4, 5)] * n)
         ksi    = result.x
+        print(f"         Done:  (ksi-mean={ksi.mean():.4f}  std={ksi.std():.4f})", flush=True)
 
     # ---- Summary ---- #
     param_names = {
