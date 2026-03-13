@@ -6,6 +6,8 @@ Two levels of parallelism:
   1. Parallel M-step  (em_mixture_parallel):
        Within each EM iteration the per-cluster structural-parameter
        optimisations run simultaneously via ProcessPoolExecutor.
+       A single pool is kept alive for the full EM run to avoid
+       repeated process-spawn overhead on Windows.
        Speedup ≈ min(C, n_cores) on the M-step portion.
        Use when C (number of clusters) is 2 or more.
 
@@ -48,24 +50,41 @@ from main import get_observed_ce
 # Must live at module scope (not closures) to be picklable by ProcessPoolExecutor.
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _compute_single_cluster_log_L(j, params, thetas_frozen, ksi,
+                                   method_arg, c, subjects, y_df, lotteries):
+    """
+    Compute the (n,) log-likelihood vector for cluster j only,
+    holding all other clusters fixed at thetas_frozen.
+
+    This avoids recomputing every cluster inside the M-step objective — only
+    the column for the cluster being optimised needs to be re-evaluated.
+    """
+    thetas_temp    = list(thetas_frozen)
+    thetas_temp[j] = params
+    # compute_log_likelihoods returns (n, C); we only need column j
+    log_L_full = compute_log_likelihoods(
+        thetas_temp, ksi, method_arg, c, subjects, y_df, lotteries
+    )
+    return log_L_full[:, j]
+
+
 def _mstep_cluster_worker(args):
     """
     Optimise the structural parameters for one cluster (M-step).
 
-    Called in a worker process; `objective` is a local closure defined here
-    and never pickled — only `args` (plain Python / numpy / pandas objects)
-    need to be picklable.
+    The objective re-evaluates only cluster j's log-likelihood at each step
+    (via _compute_single_cluster_log_L) — other clusters are not recomputed.
 
     args tuple:
         j             – cluster index
         theta_init    – current parameter vector for cluster j  (1-D ndarray)
-        thetas_frozen – list of current parameter vectors for ALL clusters
+        thetas_frozen – list of parameter vectors for ALL clusters (snapshot)
         ksi           – per-subject noise vector  (1-D ndarray)
         resp_col      – responsibility weights for cluster j  (1-D ndarray)
-        method        – "tk" or "prelec"
+        method_arg    – "tk" or "prelec"
         c             – number of clusters
         subjects      – ordered list of subject labels
-        y_df          – filtered CE DataFrame
+        y_df          – filtered CE DataFrame (with "spread" column)
         lotteries     – transformed lotteries dict
         bounds        – L-BFGS-B bounds for cluster j
     """
@@ -73,12 +92,10 @@ def _mstep_cluster_worker(args):
      resp_col, method_arg, c, subjects, y_df, lotteries, bounds) = args
 
     def objective(params):
-        thetas_temp    = list(thetas_frozen)
-        thetas_temp[j] = params
-        log_L_temp     = compute_log_likelihoods(
-            thetas_temp, ksi, method_arg, c, subjects, y_df, lotteries
+        log_L_j = _compute_single_cluster_log_L(
+            j, params, thetas_frozen, ksi, method_arg, c, subjects, y_df, lotteries
         )
-        return -float(np.sum(resp_col * log_L_temp[:, j]))
+        return -float(np.sum(resp_col * log_L_j))
 
     res = minimize(objective, theta_init, method="L-BFGS-B", bounds=bounds)
     return j, res.x
@@ -89,13 +106,13 @@ def _restart_worker(args):
     Run one full serial EM from a random initialisation.
 
     Stdout is suppressed so parallel workers do not interleave output.
-    The final log-likelihood and parameters are returned for comparison.
+    Returns the result dict for comparison in the main process.
 
     args tuple:
         seed      – integer seed for np.random (controls EM initialisation)
         method    – "tk" or "prelec"
         c         – number of clusters
-        y_df      – CE DataFrame (passed in; no file I/O in workers)
+        y_df      – already-filtered CE DataFrame
         lotteries – transformed lotteries dict
         max_iter  – EM iteration cap
         tol       – convergence tolerance
@@ -127,8 +144,11 @@ def em_mixture_parallel(
     EM mixture model with a parallelised M-step.
 
     Identical interface and output to Mixture.em_mixture(), but the per-cluster
-    structural-parameter optimisations in the M-step run simultaneously via
-    ProcessPoolExecutor(max_workers=n_workers).
+    structural-parameter optimisations in the M-step run simultaneously.
+
+    A single ProcessPoolExecutor is kept alive for the entire EM run to avoid
+    repeated process-spawn overhead (significant on Windows).  For C=1 the
+    pool is skipped entirely.
 
     Parameters
     ----------
@@ -190,67 +210,78 @@ def em_mixture_parallel(
     cluster_bounds = bounds_tk if method == "tk" else bounds_prelec
 
     # ── EM loop ───────────────────────────────────────────────────────────────
-    prev_ll = -np.inf
+    # Keep a single pool alive across all iterations to avoid per-iteration
+    # process-spawn overhead (especially costly on Windows with spawn start).
+    # For C=1 the pool is skipped; the worker is called directly.
+    prev_ll  = -np.inf
+    executor = None if c == 1 else ProcessPoolExecutor(max_workers=n_workers)
 
-    for iteration in range(max_iter):
+    try:
+        for iteration in range(max_iter):
 
-        # E-step: compute responsibilities
-        log_L     = compute_log_likelihoods(thetas, ksi, method, c, subjects, y, lotteries)
-        log_pi    = np.log(pis)
-        log_joint = log_L + log_pi[np.newaxis, :]
-        log_sum   = logsumexp(log_joint, axis=1, keepdims=True)
-        resp      = np.exp(log_joint - log_sum)
+            # E-step: compute responsibilities
+            log_L     = compute_log_likelihoods(thetas, ksi, method, c, subjects, y, lotteries)
+            log_pi    = np.log(pis)
+            log_joint = log_L + log_pi[np.newaxis, :]
+            log_sum   = logsumexp(log_joint, axis=1, keepdims=True)
+            resp      = np.exp(log_joint - log_sum)
 
-        ll = float(np.sum(log_sum))
-        if verbose:
-            print(f"Iter {iteration:3d} | LL = {ll:.4f}")
-
-        if abs(ll - prev_ll) < tol:
+            ll = float(np.sum(log_sum))
             if verbose:
-                print("Converged.")
-            break
-        prev_ll = ll
+                print(f"Iter {iteration:3d} | LL = {ll:.4f}")
 
-        # M-step: mixing weights
-        pis = resp.mean(axis=0)
+            if abs(ll - prev_ll) < tol:
+                if verbose:
+                    print("Converged.")
+                break
+            prev_ll = ll
 
-        # M-step: structural parameters — one optimisation per cluster in parallel
-        worker_args = [
-            (
-                j,
-                thetas[j],
-                list(thetas),       # snapshot: workers must not share mutable state
-                ksi.copy(),
-                resp[:, j].copy(),
-                method,
-                c,
-                subjects,
-                y,
-                lotteries,
-                cluster_bounds,
-            )
-            for j in range(c)
-        ]
+            # M-step: mixing weights
+            pis = resp.mean(axis=0)
 
-        # For C=1 skip the process-pool overhead; just call the worker directly.
-        if c == 1:
-            _, thetas[0] = _mstep_cluster_worker(worker_args[0])
-        else:
-            with ProcessPoolExecutor(max_workers=n_workers) as executor:
+            # M-step: structural parameters — one optimisation per cluster
+            # Each worker recomputes only its own cluster's log-likelihood.
+            worker_args = [
+                (
+                    j,
+                    thetas[j],
+                    list(thetas),       # snapshot: workers must not share mutable state
+                    ksi.copy(),
+                    resp[:, j].copy(),
+                    method,
+                    c,
+                    subjects,
+                    y,
+                    lotteries,
+                    cluster_bounds,
+                )
+                for j in range(c)
+            ]
+
+            if executor is None:
+                # C=1: no pool, call directly
+                _, thetas[0] = _mstep_cluster_worker(worker_args[0])
+            else:
                 futures = {executor.submit(_mstep_cluster_worker, a): a[0]
                            for a in worker_args}
                 for future in as_completed(futures):
                     j_done, new_theta = future.result()
                     thetas[j_done] = new_theta
 
-        # M-step: individual ksi — kept serial (single joint optimisation)
-        def neg_weighted_ll_ksi(ksi_params):
-            log_L_tmp = compute_log_likelihoods(thetas, ksi_params, method, c, subjects, y, lotteries)
-            return -float(np.sum(resp * log_L_tmp))
+            # M-step: individual ksi — single joint optimisation, kept serial
+            def neg_weighted_ll_ksi(ksi_params):
+                log_L_tmp = compute_log_likelihoods(
+                    thetas, ksi_params, method, c, subjects, y, lotteries
+                )
+                return -float(np.sum(resp * log_L_tmp))
 
-        res = minimize(neg_weighted_ll_ksi, ksi, method="L-BFGS-B",
-                       bounds=[(1e-4, 5)] * n)
-        ksi = res.x
+            res = minimize(neg_weighted_ll_ksi, ksi, method="L-BFGS-B",
+                           bounds=[(1e-4, 5)] * n)
+            ksi = res.x
+
+    finally:
+        if executor is not None:
+            executor.shutdown(wait=True)
 
     # ── Summary ───────────────────────────────────────────────────────────────
     param_names = {
@@ -300,12 +331,17 @@ def run_em_multistart(
     if lotteries is None:
         lotteries = f.transform(lottery)
 
-    # Filter y once here so every worker gets the same clean DataFrame
+    # Filter y once before sending to workers — em_mixture would filter again
+    # anyway, but sending the pre-filtered DataFrame avoids redundant work and
+    # keeps each worker's DataFrame smaller.
     spreads = {lid: lotteries[lid]["spread"] for lid in lotteries}
     y       = y[y["lottery_id"].isin(lotteries.keys())].copy()
     y["spread"] = y["lottery_id"].map(spreads)
 
-    seeds = np.random.randint(0, 10_000, size=n_restarts).tolist()
+    # Use full int32 range to avoid seed collisions for large n_restarts
+    rng   = np.random.default_rng()
+    seeds = rng.integers(0, 2**31, size=n_restarts).tolist()
+
     worker_args = [
         (seed, method, c, y, lotteries, max_iter, tol)
         for seed in seeds
@@ -331,6 +367,9 @@ def run_em_multistart(
             else:
                 print(f"  [{completed}/{n_restarts}] LL = {ll:.4f}",
                       end="\r", flush=True)
+
+    if best_result is None:
+        raise RuntimeError("All EM restarts failed to return a result.")
 
     print(f"\nBest LL across {n_restarts} restarts: {best_ll:.4f}")
 

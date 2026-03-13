@@ -24,7 +24,7 @@ prob_weighter = "prelec"
 C = 2
 
 ### Method
-method = "tk"
+method = "prelec"
 
 
 
