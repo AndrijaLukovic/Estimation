@@ -10,7 +10,7 @@ All observations are assigned round_number=1 (session 1, Z_t = 0).
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
+from GlobalSettings import GlobalMethod, GlobalLottery, GlobalCluster, GlobalStarts, GlobalTol
 import numpy as np
 import pandas as pd
 import functions as f
@@ -39,8 +39,8 @@ KSI_VALUES = {f"sub_{i}": max(1e-4, np.random.normal(0.19,0.106)) for i in range
 
 
 # ── SETTINGS ──────────────────────────────────────────────────────────────────
-METHOD   = "prelec"            
-LOTTERY  = para_recov #lotteries_full
+METHOD   = GlobalMethod
+LOTTERY  = GlobalLottery
 ALL_SEEDS = [10,15,20,25]
 SEED     = 42
 _HERE    = os.path.dirname(os.path.abspath(__file__))
@@ -51,8 +51,8 @@ OUT_PATH = os.path.join(_HERE, "pseudo_data.csv")
 def generate_pseudo_data(
     true_params=None,
     ksi_values=None,
-    method="tk",
-    lottery=None,
+    method=GlobalMethod,
+    lottery=GlobalLottery,
     seed=42,
 ):
     if true_params is None:

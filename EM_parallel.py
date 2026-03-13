@@ -33,6 +33,7 @@ import contextlib
 import io
 import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from GlobalSettings import GlobalMethod, GlobalLottery, GlobalCluster, GlobalStarts, GlobalTol, GlobalPrelecBounds, GlobalTKBounds, GlobalInterMax
 
 import numpy as np
 import pandas as pd
@@ -199,15 +200,7 @@ def em_mixture_parallel(
         ksi = np.ones(n) * 0.1
 
     # Bounds per cluster (same as in Mixture.em_mixture)
-    bounds_tk = [
-        (1e-4, 0.2), (0.5, 1.5), (1.0, 3.0), (0.2, 1.0),
-        (0.0, 1.0), (0.0, 1.0), (0.0, 1.0), (0.0, 1.0),
-    ]
-    bounds_prelec = [
-        (1e-4, 0.2), (0.5, 1.5), (1.0, 3.0), (1.0, 1.0), (0.1, 0.8),
-        (0.0, 1.0), (0.0, 1.0), (0.0, 1.0), (0.0, 1.0),
-    ]
-    cluster_bounds = bounds_tk if method == "tk" else bounds_prelec
+    cluster_bounds = GlobalTKBounds if method == "tk" else GlobalPrelecBounds
 
     # ── EM loop ───────────────────────────────────────────────────────────────
     # Keep a single pool alive across all iterations to avoid per-iteration
@@ -306,7 +299,7 @@ def em_mixture_parallel(
 
 def run_em_multistart(
     n_restarts=8, method=method, c=C, y=None, lotteries=None,
-    max_iter=100, tol=1e-6, n_workers=None,
+    max_iter=GlobalInterMax, tol=GlobalTol, n_workers=None,
 ):
     """
     Run the EM algorithm from n_restarts different random initialisations

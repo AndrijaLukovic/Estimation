@@ -21,6 +21,7 @@ import numpy as np
 import pandas as pd
 import functions as f
 from lotteries import para_recov
+from GlobalSettings import GlobalMethod, GlobalLottery, GlobalCluster, GlobalStarts, GlobalTol
 from EM_parallel import run_em_multistart
 from generate_pseudo_data import generate_pseudo_data_multisession
 
@@ -71,12 +72,12 @@ KSI_VALUES = {
 
 
 # ── SETTINGS ──────────────────────────────────────────────────────────────────
-METHOD     = "prelec"      # "prelec" or "tk"
-LOTTERY    = para_recov    # lottery set used for both data generation and estimation
-C          = 2             # number of EM clusters
+METHOD     = GlobalMethod      # "prelec" or "tk"
+LOTTERY    = GlobalLottery    # lottery set used for both data generation and estimation
+C          = GlobalCluster             # number of EM clusters
 SEED       = 42            # seed for KSI_VALUES draw and single-seed run
 ALL_SEEDS  = [10, 15, 20, 25]   # data-generation seeds; one full recovery per seed
-N_RESTARTS = 8             # EM restarts per seed (passed to run_em_multistart)
+N_RESTARTS = GlobalStarts             # EM restarts per seed (passed to run_em_multistart)
 _HERE      = os.path.dirname(os.path.abspath(__file__))
 OUT_PATH   = os.path.join(_HERE, "pseudo_data_multisession.csv")
 # ─────────────────────────────────────────────────────────────────────────────
