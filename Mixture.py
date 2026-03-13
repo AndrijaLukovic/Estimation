@@ -8,12 +8,13 @@ from scipy.special import logsumexp
 import functions as f
 from lotteries import lotteries_full, one, all_high_stake, all_low_stake
 from main import get_observed_ce
-
+from GlobalSettings import GlobalTKBounds, GlobalPrelecBounds, GlobalMethod, GlobalLottery, GlobalCluster, GlobalTol
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 
 
 # ── Lottery set to estimate on ──────────────────────────────────────────────
 # Switch between all_low_stake / all_high_stake / lotteries_full
-lottery = lotteries_full
+lottery = GlobalLottery
 # ────────────────────────────────────────────────────────────────────────────
 
 ### Choice of the method "prelec" or "tk"
@@ -21,10 +22,10 @@ prob_weighter = "prelec"
 
 
 ### Number of clusters
-C = 2
+C = GlobalCluster
 
 ### Method
-method = "prelec"
+method = GlobalMethod
 
 
 
@@ -107,97 +108,8 @@ def mixture(thetas, pis, ksi, method, c=1, y=None, lotteries=None, subjects=None
     return L
 '''
 
-
-
-def compute_log_likelihoods(thetas, ksi, method=method, c=C, subjects=None, y=None, lotteries=None):
-    """
-    Returns an (n, c) matrix where entry [i, j] is the total log-likelihood
-    of subject i's observed CEs under cluster j's structural parameters.
-
-      Session 1 (round_number < 15):  t=0, Z_t = 0
-        Only the forward-looking component is active:
-        R_l = (1 - a1 - a2 - a3) * E[L_l]
-
-      Session 2 (round_number == 15): t=1, Z_t = Z_1
-        R_l = composite(a1, a2, a3,
-                        R^SQ = 0,
-                        R^A  = partial_adaptation([0, Z_1], delta),
-                        R^LE = lagged_expectation([E[L_l]], delta),
-                        R^FE = E[L_l])
-
-      Session 3 (round_number == 16): t=2, Z_t = Z_1 + Z_2
-        R_l = composite(a1, a2, a3,
-                        R^SQ = 0,
-                        R^A  = partial_adaptation([0, Z_1, Z_2], delta),
-                        R^LE = lagged_expectation([E[L_l], E[L_l]], delta),
-                        R^FE = E[L_l])
-                                          
-    Parameter vector per cluster:
-      TK:     [r, alpha, lamb, gamma, a1, a2, a3, delta]         (8 params)
-      Prelec: [r, alpha, lamb, beta, palpha, a1, a2, a3, delta]  (9 params)
-    """
-
-    assert len(thetas) == c, \
-        "The length of the thetas list must correspond to the number of clusters c."
-
-    if y is None:
-        y = get_observed_ce(export_excel=False)
-    if lotteries is None:
-        lotteries = f.transform(lottery)
-    if subjects is None:
-        subjects = sorted(y["participant_label"].unique())
-
-    n = len(subjects)
-    subj_index = {s: i for i, s in enumerate(subjects)}
-
-    y = y[y["lottery_id"].isin(lotteries.keys())].copy()
-    spreads = {lid: lotteries[lid]["spread"] for lid in lotteries}
-    y["spread"] = y["lottery_id"].map(spreads)
-
-    # ── Precompute per-row quantities that don't depend on cluster params ────
-    # EL: expected payoff of each lottery — same for every row with that lottery_id
-    EL_map = {lid: f.expected_payoff(lotteries[lid]["outcomes"]) for lid in lotteries}
-    y["_EL"] = y["lottery_id"].map(EL_map)
-
-    # Session indicator: t=0 (s1), t=1 (s2), t=2 (s3)
-    s2 = y["round_number"] == 15
-    s3 = y["round_number"] >= 16
-    y["_t"] = s2.astype(int) + s3.astype(int)
-
-    # Realised payoffs — vectorized label parsing; 0 where not yet observed
-    def _parse_col(col):
-        return pd.to_numeric(
-            col.str.replace("£", "", regex=False), errors="coerce"
-        ).fillna(0).astype(int)
-
-    y["_Z1"] = np.where(s2 | s3, _parse_col(y["realized_period1_label"]), 0)
-    y["_Z2"] = np.where(s3,      _parse_col(y["realized_period2_label"]), 0)
-    y["_Zt"] = y["_Z1"] + y["_Z2"]
-
-    # Subject integer index per row (for np.add.at accumulation)
-    y["_si"] = y["participant_label"].map(subj_index)
-
-    # sigma = ksi_i * spread_l  (same across clusters for a given ksi)
-    ksi_arr  = np.array([ksi[subj_index[s]] for s in y["participant_label"]])
-    y["_sigma"] = ksi_arr * y["spread"].values
-
-    # Cache key: uniquely determines R_l for any fixed cluster params
-    # (lottery_id, t, Z1, Z2) → same EL, same RA, same RLE → same R_l
-    y["_ckey"] = list(zip(y["lottery_id"], y["_t"], y["_Z1"], y["_Z2"]))
-
-    # Numpy arrays for hot-path computation
-    EL_arr  = y["_EL"].values.astype(float)
-    t_arr   = y["_t"].values.astype(float)
-    Z1_arr  = y["_Z1"].values.astype(float)
-    Z2_arr  = y["_Z2"].values.astype(float)
-    Zt_arr  = y["_Zt"].values.astype(float)
-    si_arr  = y["_si"].values
-    sig_arr = y["_sigma"].values
-    obs_arr = y["ce_observed"].values.astype(float)
-
-    log_L = np.zeros((n, c))
-
-    for j, params in enumerate(thetas):
+def _cluster_ll(j, params, method, n, EL_arr, t_arr, Z1_arr, Z2_arr,
+                Zt_arr, si_arr, sig_arr, obs_arr, lotteries, y):
 
         if method == "tk":
             r, alpha, lamb, gamma, a1, a2, a3, delta = params[:8]
@@ -246,15 +158,176 @@ def compute_log_likelihoods(thetas, ksi, method=method, c=C, subjects=None, y=No
 
         # ── Accumulate log-likelihood per subject ─────────────────────────────
         log_pdf = norm.logpdf(obs_arr, loc=ce_th, scale=sig_arr)
-        np.add.at(log_L[:, j], si_arr, log_pdf)
+        col = np.zeros(n)
+        np.add.at(col, si_arr, log_pdf)
+        return j, col
 
+
+
+def compute_log_likelihoods(thetas, ksi, method=method, c=C, subjects=None, y=None, lotteries=None):
+    """
+    Returns an (n, c) matrix where entry [i, j] is the total log-likelihood
+    of subject i's observed CEs under cluster j's structural parameters.
+
+      Session 1 (round_number < 15):  t=0, Z_t = 0
+        Only the forward-looking component is active:
+        R_l = (1 - a1 - a2 - a3) * E[L_l]
+
+      Session 2 (round_number == 15): t=1, Z_t = Z_1
+        R_l = composite(a1, a2, a3,
+                        R^SQ = 0,
+                        R^A  = partial_adaptation([0, Z_1], delta),
+                        R^LE = lagged_expectation([E[L_l]], delta),
+                        R^FE = E[L_l])
+
+      Session 3 (round_number == 16): t=2, Z_t = Z_1 + Z_2
+        R_l = composite(a1, a2, a3,
+                        R^SQ = 0,
+                        R^A  = partial_adaptation([0, Z_1, Z_2], delta),
+                        R^LE = lagged_expectation([E[L_l], E[L_l]], delta),
+                        R^FE = E[L_l])
+                                          
+    Parameter vector per cluster:
+      TK:     [r, alpha, lamb, gamma, a1, a2, a3, delta]         (8 params)
+      Prelec: [r, alpha, lamb, beta, palpha, a1, a2, a3, delta]  (9 params)
+    """
+
+    assert len(thetas) == c, \
+        "The length of the thetas list must correspond to the number of clusters c."
+
+    if y is None:
+        y = get_observed_ce(export_excel=False)
+    if lotteries is None:
+        lotteries = f.transform(lottery)
+    if subjects is None:
+        subjects = sorted(y["participant_label"].unique())
+
+    n = len(subjects)
+    subj_index = {s: i for i, s in enumerate(subjects)}
+
+    y = y[y["lottery_id"].isin(lotteries.keys())].copy().reset_index(drop=True)
+    spreads = {lid: lotteries[lid]["spread"] for lid in lotteries}
+    y["spread"] = y["lottery_id"].map(spreads)
+
+    # ── Precompute per-row quantities that don't depend on cluster params ────
+    # EL: expected payoff of each lottery — same for every row with that lottery_id
+    EL_map = {lid: f.expected_payoff(lotteries[lid]["outcomes"]) for lid in lotteries}
+    y["_EL"] = y["lottery_id"].map(EL_map)
+
+    # Session indicator: t=0 (s1), t=1 (s2), t=2 (s3)
+    s2 = y["round_number"] == 15
+    s3 = y["round_number"] >= 16
+    y["_t"] = s2.astype(int) + s3.astype(int)
+
+    # Realised payoffs — vectorized label parsing; 0 where not yet observed
+    def _parse_col(col):
+        return pd.to_numeric(
+            col.str.replace("£", "", regex=False), errors="coerce"
+        ).fillna(0).astype(int)
+
+    y["_Z1"] = np.where(s2 | s3, _parse_col(y["realized_period1_label"]), 0)
+    y["_Z2"] = np.where(s3,      _parse_col(y["realized_period2_label"]), 0)
+    y["_Zt"] = y["_Z1"] + y["_Z2"]
+
+    # Subject integer index per row (for np.add.at accumulation)
+    y["_si"] = y["participant_label"].map(subj_index)
+
+    # sigma = ksi_i * spread_l  (same across clusters for a given ksi)
+    ksi_arr  = np.array([ksi[subj_index[s]] for s in y["participant_label"]])
+    y["_sigma"] = ksi_arr * y["spread"].values
+
+    # Cache key: uniquely determines R_l for any fixed cluster params
+    # (lottery_id, t, Z1, Z2) → same EL, same RA, same RLE → same R_l
+    y["_ckey"] = list(zip(y["lottery_id"], y["_t"], y["_Z1"], y["_Z2"]))
+
+    # Numpy arrays for hot-path computation
+    EL_arr  = y["_EL"].values.astype(float)
+    t_arr   = y["_t"].values.astype(float)
+    Z1_arr  = y["_Z1"].values.astype(float)
+    Z2_arr  = y["_Z2"].values.astype(float)
+    Zt_arr  = y["_Zt"].values.astype(float)
+    si_arr  = y["_si"].values
+    sig_arr = y["_sigma"].values
+    obs_arr = y["ce_observed"].values.astype(float)
+
+    log_L = np.zeros((n, c))
+
+    import multiprocessing
+    fixed = (method, n, EL_arr, t_arr, Z1_arr, Z2_arr,
+             Zt_arr, si_arr, sig_arr, obs_arr, lotteries, y)
+    in_worker = multiprocessing.current_process().name != "MainProcess"
+    if in_worker or c == 1:
+        for j in range(c):
+            _, col = _cluster_ll(j, thetas[j], *fixed)
+            log_L[:, j] = col
+    else:
+        with ThreadPoolExecutor(max_workers=c) as executor:
+            futures = [executor.submit(_cluster_ll, j, thetas[j], *fixed) for j in range(c)]
+            for future in futures:
+                j, col = future.result()
+                log_L[:, j] = col
+            
     return log_L
 
 
+## Add this to start randomly. This helps to eliminate the local maxima.
+
+def _run_one_em(args):
+    seed, kwargs = args
+    np.random.seed(seed)
+    return em_mixture(**kwargs, seed=seed)
+
+def em_mixture_best_of(n_restarts, seeds=None, n_workers=None, **em_kwargs):
+    if seeds is None:
+        seeds = list(range(n_restarts))
+
+    em_kwargs["verbose"] = False
+    args_list = [(s, em_kwargs) for s in seeds]
+
+    W = 62
+    print(f"\n{'─'*W}")
+    print(f"  Parallel EM  |  {n_restarts} restarts  C={em_kwargs.get('c', C)}  method={em_kwargs.get('method', method)!r}")
+    print(f"{'─'*W}")
+    print(f"  {'Seed':>6}  │  {'Log-Likelihood':>16}  │  {'Iters':>5}  │  Status")
+    print(f"  {'─'*6}──┼──{'─'*16}──┼──{'─'*5}──┼──{'─'*14}")
+
+    results  = []
+    best_ll  = -np.inf
+
+    with ProcessPoolExecutor(max_workers=n_workers) as executor:
+        future_to_seed = {executor.submit(_run_one_em, a): a[0] for a in args_list}
+        for future in as_completed(future_to_seed):
+            r = future.result()
+            results.append(r)
+            is_best = r["log_likelihood"] > best_ll
+            if is_best:
+                best_ll = r["log_likelihood"]
+            status = ("converged" if r["converged"] else "not converged")
+            mark   = "  <- best so far" if is_best else ""
+            print(f"  {str(r['seed']):>6}  │  {r['log_likelihood']:>16.4f}  │  {r['n_iter']:>5}  │  {status}{mark}", flush=True)
+
+    best = max(results, key=lambda r: r["log_likelihood"])
+    print(f"{'─'*W}")
+    print(f"  Winner: Seed {best['seed']}  |  LL = {best['log_likelihood']:.4f}  |  {best['n_iter']} iters")
+    print(f"{'─'*W}")
+
+    # ── Print winner's parameter estimates ───────────────────────────────────
+    method_used = em_kwargs.get("method", method)
+    param_names = {
+        "tk":     ["r", "α", "λ", "γ",  "a1", "a2", "a3", "δ"],
+        "prelec": ["r", "α", "λ", "β",  "pα", "a1", "a2", "a3", "δ"],
+    }[method_used]
+    c_used = em_kwargs.get("c", C)
+    print(f"\n{'Cluster':<10} {'π':<8} " + "  ".join(f"{p:<8}" for p in param_names))
+    print("-" * (10 + 8 + 10 * len(param_names)))
+    for j in range(c_used):
+        print(f"{j+1:<10} {best['pis'][j]:<8.3f} " + "  ".join(f"{v:<8.4f}" for v in best['thetas'][j]))
+
+    return best
 
 
 def em_mixture(thetas=None, pis=None, ksi=None, subjects=None, method=method, c=C,
-               y=None, lotteries=None, max_iter=100, tol=1e-6):
+               y=None, lotteries=None, max_iter=100, tol=1e-6, seed=None, verbose=True):
 
     if y is None:
         y = get_observed_ce(export_excel=False)
@@ -329,13 +402,15 @@ def em_mixture(thetas=None, pis=None, ksi=None, subjects=None, method=method, c=
     # appears inside compute_log_likelihoods().
     prev_ll = -np.inf
 
-    print(f"\n{'─'*55}")
-    print(f"  EM start  |  C={c}  method={method!r}  n={n}  tol={tol}")
-    print(f"{'─'*55}")
+    if verbose:
+        print(f"\n{'─'*55}")
+        print(f"  EM start  |  C={c}  method={method!r}  n={n}  tol={tol}")
+        print(f"{'─'*55}")
 
     for iteration in range(max_iter):
 
-        print(f"\n[Iter {iteration+1:>3}] E-step  — computing log-likelihoods ...", flush=True)
+        if verbose:
+            print(f"\n[Seed {str(seed):>3}, Iter {iteration+1:>3}] E-step  — computing log-likelihoods ...", flush=True)
 
         # ── E-step ───────────────────────────────────────────────────────────────
         log_L     = compute_log_likelihoods(thetas, ksi, method, c, subjects, y, lotteries)
@@ -349,10 +424,12 @@ def em_mixture(thetas=None, pis=None, ksi=None, subjects=None, method=method, c=
         # Print per-cluster soft assignment sizes
         soft_n = resp.sum(axis=0)
         assign_str = "  ".join(f"C{j+1}: {soft_n[j]:.1f} (π={pis[j]:.3f})" for j in range(c))
-        print(f"         LL = {ll:.4f}   Improvement = {ll - prev_ll:+.4f}   [{assign_str}]", flush=True)
+        if verbose:
+            print(f"         LL = {ll:.4f}   Improvement = {ll - prev_ll:+.4f}   [{assign_str}]", flush=True)
 
         if abs(ll - prev_ll) < tol:
-            print(f"\n  Converged after {iteration+1} iteration(s)  (|ΔLL| < {tol})")
+            if verbose:
+                print(f"\n  Converged after {iteration+1} iteration(s)  (|ΔLL| < {tol})")
             break
         prev_ll = ll
 
@@ -360,31 +437,12 @@ def em_mixture(thetas=None, pis=None, ksi=None, subjects=None, method=method, c=
         pis = resp.mean(axis=0)
 
         # ── M-step: cluster structural + reference-point parameters ──────────────
-        bounds_tk = [
-            (1e-4, 0.2),  # r
-            (0.5,  1.5),  # alpha
-            (1.0,  3.0),  # lamb
-            (0.2,  1.0),  # gamma
-            (0.0,  1.0),  # a1
-            (0.0,  1.0),  # a2
-            (0.0,  1.0),  # a3
-            (0.0,  1.0),  # delta
-        ]
-        bounds_prelec = [
-            (1e-4, 0.2),  # r
-            (0.5,  1.5),  # alpha
-            (1.0,  3.0),  # lamb
-            (1.0,  1.0),  # beta (fixed)
-            (0.1,  0.8),  # palpha
-            (0.0,  1.0),  # a1
-            (0.0,  1.0),  # a2
-            (0.0,  1.0),  # a3
-            (0.0,  1.0),  # delta
-        ]
-        bounds = bounds_tk if method == "tk" else bounds_prelec
+
+        bounds = GlobalTKBounds if method == "tk" else GlobalPrelecBounds
 
         for j in range(c):
-            print(f"[Iter {iteration+1:>3}] M-step  — cluster {j+1}/{c}: Estimating preference parameters...", flush=True)
+            if verbose:
+                print(f"[Seed {str(seed):>3} Iter {iteration+1:>3}] M-step  — cluster {j+1}/{c}: Estimating preference parameters...", flush=True)
             resp_j = resp[:, j]
 
             def neg_weighted_ll_theta(params, j=j, resp_j=resp_j):
@@ -395,10 +453,12 @@ def em_mixture(thetas=None, pis=None, ksi=None, subjects=None, method=method, c=
 
             result    = minimize(neg_weighted_ll_theta, thetas[j], method="L-BFGS-B", bounds=bounds)
             thetas[j] = result.x
-            print(f"         cluster {j+1} done  (converged={result.success})", flush=True)
+            if verbose:
+                print(f"         cluster {j+1} done  (converged={result.success})", flush=True)
 
         # ── M-step: individual noise parameters ksi ──────────────────────────────
-        print(f"[Iter {iteration+1:>3}] M-step  — Estimating inidividual errors ({n} subjects) ...", flush=True)
+        if verbose:
+            print(f"[Seed {str(seed):>3} Iter {iteration+1:>3}] M-step  — Estimating inidividual errors ({n} subjects) ...", flush=True)
 
         def neg_weighted_ll_ksi(ksi_params):
             log_L_temp = compute_log_likelihoods(thetas, ksi_params, method, c, subjects, y, lotteries)
@@ -406,7 +466,11 @@ def em_mixture(thetas=None, pis=None, ksi=None, subjects=None, method=method, c=
 
         result = minimize(neg_weighted_ll_ksi, ksi, method="L-BFGS-B", bounds=[(1e-4, 5)] * n)
         ksi    = result.x
-        print(f"         Done:  (ksi-mean={ksi.mean():.4f}  std={ksi.std():.4f})", flush=True)
+        if verbose:
+            print(f"         Done:  (ksi-mean={ksi.mean():.4f}  std={ksi.std():.4f})", flush=True)
+
+    n_iter    = iteration + 1
+    converged = abs(ll - prev_ll) < tol
 
     # ---- Summary ---- #
     param_names = {
@@ -414,17 +478,23 @@ def em_mixture(thetas=None, pis=None, ksi=None, subjects=None, method=method, c=
         "prelec": ["r", "α", "λ", "β",  "pα", "a1", "a2", "a3", "δ"],
     }[method]
 
-    print(f"\n{'Cluster':<10} {'π':<8} " + "  ".join(f"{p:<8}" for p in param_names))
-    print("-" * (10 + 8 + 10 * len(param_names)))
-    for j in range(c):
-        print(f"{j+1:<10} {pis[j]:<8.3f} " + "  ".join(f"{v:<8.4f}" for v in thetas[j]))
+    if verbose:
+        print(f"\n{'Cluster':<10} {'π':<8} " + "  ".join(f"{p:<8}" for p in param_names))
+        print("-" * (10 + 8 + 10 * len(param_names)))
+        for j in range(c):
+            print(f"{j+1:<10} {pis[j]:<8.3f} " + "  ".join(f"{v:<8.4f}" for v in thetas[j]))
+        print(f"\nFinal LL: {ll:.4f}")
 
-    print(f"\nFinal LL: {ll:.4f}")
-
-    return {"thetas": thetas, "pis": pis, "ksi": ksi, "log_likelihood": ll}
+    return {"thetas": thetas, "pis": pis, "ksi": ksi, "log_likelihood": ll,
+            "n_iter": n_iter, "converged": converged, "seed": seed}
 
 
 
 if __name__ == "__main__":
 
-    em_mixture()
+    SEEDS = [10, 20, 30, 40, 50, 60, 70, 80]
+
+    em_mixture_best_of(
+        n_restarts=len(SEEDS),
+        seeds=SEEDS,
+    )

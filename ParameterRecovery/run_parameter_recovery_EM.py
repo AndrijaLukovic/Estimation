@@ -17,8 +17,8 @@ import numpy as np
 import pandas as pd
 import functions as f
 from lotteries import para_recov
-from GlobalSettings import GlobalMethod, GlobalLottery, GlobalCluster, GlobalTol
-from Mixture import em_mixture
+from GlobalSettings import GlobalMethod, GlobalLottery, GlobalCluster, GlobalTol, GlobalInterMax, GlobalSeedsSet, GlobalTKBounds, GlobalPrelecBounds
+from Mixture import em_mixture, em_mixture_best_of
 from generate_pseudo_data import generate_pseudo_data_multisession
 
 
@@ -56,8 +56,8 @@ TRUE_PI = [0.4, 0.6]
 
 
 # ── KSI VALUES ────────────────────────────────────────────────────────────────
-NUM_SUBJECTS = 50
-KSI_SEED     = 42
+NUM_SUBJECTS = 750
+KSI_SEED     = 10
 np.random.seed(KSI_SEED)
 KSI_VALUES = {
     f"sub_{i}": max(1e-4, np.random.normal(0.19, 0.106))
@@ -216,8 +216,11 @@ if __name__ == "__main__":
               f"{df['lottery_id'].nunique()} lotteries × "
               f"{df['round_number'].nunique()} sessions = {len(df)} obs")
 
-        np.random.seed(seed)
-        result = em_mixture(method=METHOD, c=C, y=df, lotteries=lotteries_t)
+        result = em_mixture_best_of(
+            n_restarts= None,
+            seeds=GlobalSeedsSet,
+            method=METHOD, c=C, y=df, lotteries=lotteries_t,
+        )
 
         if C > 1:
             rec_pis, rec_thetas = _match_clusters(
