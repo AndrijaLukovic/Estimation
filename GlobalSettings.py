@@ -5,7 +5,7 @@ import lotteries
 import os
 
 GlobalMethod = "prelec"
-GlobalLottery = lotteries.para_recov
+GlobalLottery = lotteries.lotteries_full
 GlobalCluster = 2
 GlobalStarts = 8
 GlobalTol = 1e-4

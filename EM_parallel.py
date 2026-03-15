@@ -40,7 +40,7 @@ from scipy.special import logsumexp
 from scipy.stats import norm
 
 import functions as f
-from Mixture import compute_log_likelihoods, C, method, lottery
+from Mixture import compute_log_likelihoods, C, method, lottery, write_em_results
 from main import get_observed_ce
 
 
@@ -203,10 +203,13 @@ def em_mixture_parallel(
     # process-spawn overhead (especially costly on Windows with spawn start).
     # For C=1 the pool is skipped; the worker is called directly.
     prev_ll  = -np.inf
+    iter_log = []
     executor = None if c == 1 else ProcessPoolExecutor(max_workers=n_workers)
 
     try:
         for iteration in range(max_iter):
+
+            t_iter_start = time.time()
 
             # E-step: compute responsibilities
             log_L     = compute_log_likelihoods(thetas, ksi, method, c, subjects, y, lotteries)
@@ -215,11 +218,22 @@ def em_mixture_parallel(
             log_sum   = logsumexp(log_joint, axis=1, keepdims=True)
             resp      = np.exp(log_joint - log_sum)
 
-            ll = float(np.sum(log_sum))
+            ll          = float(np.sum(log_sum))
+            soft_n      = resp.sum(axis=0)
+            improvement = ll - prev_ll
+
             if verbose:
-                print(f"Iter {iteration:3d} | LL = {ll:.4f}")
+                print(f"Iter {iteration:3d} | LL = {ll:.4f}  Improvement = {improvement:+.4f}")
 
             if abs(ll - prev_ll) < tol:
+                iter_log.append({
+                    "iteration": iteration + 1,
+                    "log_likelihood": ll,
+                    "improvement": improvement,
+                    "soft_n": soft_n.copy(),
+                    "pis": pis.copy(),
+                    "elapsed": time.time() - t_iter_start,
+                })
                 if verbose:
                     print("Converged.")
                 break
@@ -268,6 +282,15 @@ def em_mixture_parallel(
                            bounds=[(1e-4, 5)] * n)
             ksi = res.x
 
+            iter_log.append({
+                "iteration": iteration + 1,
+                "log_likelihood": ll,
+                "improvement": improvement,
+                "soft_n": soft_n.copy(),
+                "pis": pis.copy(),
+                "elapsed": time.time() - t_iter_start,
+            })
+
     finally:
         if executor is not None:
             executor.shutdown(wait=True)
@@ -286,7 +309,11 @@ def em_mixture_parallel(
                   "  ".join(f"{v:<8.4f}" for v in thetas[j]))
         print(f"\nFinal LL: {ll:.4f}")
 
-    return {"thetas": thetas, "pis": pis, "ksi": ksi, "log_likelihood": ll}
+    n_iter    = iteration + 1
+    converged = abs(ll - prev_ll) < tol
+    return {"thetas": thetas, "pis": pis, "ksi": ksi, "log_likelihood": ll,
+            "n_iter": n_iter, "converged": converged, "seed": None,
+            "resp": resp, "iter_log": iter_log, "subjects": subjects}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -380,6 +407,7 @@ def run_em_multistart(
         print(f"{j+1:<10} {best_result['pis'][j]:<8.3f} " +
               "  ".join(f"{v:<8.4f}" for v in best_result['thetas'][j]))
 
+    best_result["method_used"] = method
     return best_result
 
 
@@ -392,6 +420,7 @@ if __name__ == "__main__":
 
     y          = get_observed_ce(export_excel=False)
     lotteries  = f.transform(lottery)
+    subjects   = sorted(y["participant_label"].unique())
 
     result = run_em_multistart(
         n_restarts=8,
@@ -411,3 +440,9 @@ if __name__ == "__main__":
         for name, val in zip(param_names, result["thetas"][j]):
             print(f"    {name:<10} = {val:.4f}")
     print(f"\nFinal LL: {result['log_likelihood']:.4f}")
+
+    # Attach subjects if not already set by the best em_mixture run
+    if not result.get("subjects"):
+        result["subjects"] = subjects
+
+    write_em_results(result, filepath="em_results.txt")

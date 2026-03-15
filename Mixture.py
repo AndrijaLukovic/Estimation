@@ -1,3 +1,4 @@
+import time
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
@@ -424,7 +425,8 @@ def em_mixture(thetas=None, pis=None, ksi=None, subjects=None, method=method, c=
     # 'resp' holds the (n, c) responsibility matrix from the E-step.
     # Using 'resp' here to avoid shadowing the discount-rate variable 'r' that
     # appears inside compute_log_likelihoods().
-    prev_ll = -np.inf
+    prev_ll  = -np.inf
+    iter_log = []
 
     if verbose:
         print(f"\n{'─'*55}")
@@ -432,6 +434,8 @@ def em_mixture(thetas=None, pis=None, ksi=None, subjects=None, method=method, c=
         print(f"{'─'*55}")
 
     for iteration in range(max_iter):
+
+        t_iter_start = time.time()
 
         if verbose:
             print(f"\n[Seed {str(seed):>3}, Iter {iteration+1:>3}] E-step  — computing log-likelihoods ...", flush=True)
@@ -447,11 +451,20 @@ def em_mixture(thetas=None, pis=None, ksi=None, subjects=None, method=method, c=
 
         # Print per-cluster soft assignment sizes
         soft_n = resp.sum(axis=0)
+        improvement = ll - prev_ll
         assign_str = "  ".join(f"C{j+1}: {soft_n[j]:.1f} (π={pis[j]:.3f})" for j in range(c))
         if verbose:
-            print(f"         LL = {ll:.4f}   Improvement = {ll - prev_ll:+.4f}   [{assign_str}]", flush=True)
+            print(f"         LL = {ll:.4f}   Improvement = {improvement:+.4f}   [{assign_str}]", flush=True)
 
         if abs(ll - prev_ll) < tol:
+            iter_log.append({
+                "iteration": iteration + 1,
+                "log_likelihood": ll,
+                "improvement": improvement,
+                "soft_n": soft_n.copy(),
+                "pis": pis.copy(),
+                "elapsed": time.time() - t_iter_start,
+            })
             if verbose:
                 print(f"\n  Converged after {iteration+1} iteration(s)  (|ΔLL| < {tol})")
             break
@@ -493,6 +506,15 @@ def em_mixture(thetas=None, pis=None, ksi=None, subjects=None, method=method, c=
         if verbose:
             print(f"         Done:  (ksi-mean={ksi.mean():.4f}  std={ksi.std():.4f})", flush=True)
 
+        iter_log.append({
+            "iteration": iteration + 1,
+            "log_likelihood": ll,
+            "improvement": improvement,
+            "soft_n": soft_n.copy(),
+            "pis": pis.copy(),
+            "elapsed": time.time() - t_iter_start,
+        })
+
     n_iter    = iteration + 1
     converged = abs(ll - prev_ll) < tol
 
@@ -520,15 +542,110 @@ def em_mixture(thetas=None, pis=None, ksi=None, subjects=None, method=method, c=
         print(f"\nFinal LL: {ll:.4f}")
 
     return {"thetas": thetas, "pis": pis, "ksi": ksi, "log_likelihood": ll,
-            "n_iter": n_iter, "converged": converged, "seed": seed}
+            "n_iter": n_iter, "converged": converged, "seed": seed,
+            "resp": resp, "iter_log": iter_log, "subjects": subjects}
 
+
+
+def write_em_results(result, filepath="em_results.txt"):
+    """
+    Write EM estimation results to a plain-text file.
+
+    Includes:
+      - Run metadata (method, clusters, convergence, seed, final LL)
+      - Iteration overview (LL, improvement, soft cluster sizes, wall time per iter)
+      - Cluster parameter table (thetas + pis)
+      - Individual estimates: ksi and tau (responsibility) per subject
+    """
+    method_used = result.get("method_used", method)
+    c_used      = len(result["thetas"])
+    subjects    = result.get("subjects", [])
+    n           = len(subjects)
+
+    param_names = {
+        "tk":     ["r", "alpha", "lambda", "gamma", "a1", "a2", "a3", "delta"],
+        "prelec": ["r", "alpha", "lambda", "beta",  "palpha", "a1", "a2", "a3", "delta"],
+    }[method_used]
+
+    lines = []
+    sep   = "=" * 72
+    thin  = "─" * 72
+
+    lines += [sep, "EM MIXTURE MODEL — ESTIMATION RESULTS", sep, ""]
+    lines.append(f"  Method        : {method_used}")
+    lines.append(f"  Clusters (C)  : {c_used}")
+    lines.append(f"  Subjects (N)  : {n}")
+    lines.append(f"  Iterations    : {result.get('n_iter', '?')}")
+    lines.append(f"  Converged     : {result.get('converged', '?')}")
+    lines.append(f"  Seed          : {result.get('seed', 'N/A')}")
+    lines.append(f"  Log-Likelihood: {result['log_likelihood']:.6f}")
+    lines.append("")
+
+    # ── Iteration overview ───────────────────────────────────────────────────
+    iter_log = result.get("iter_log", [])
+    if iter_log:
+        lines += [thin, "ITERATION OVERVIEW", thin]
+        col_w   = 12
+        hdr  = f"{'Iter':>5}  {'Log-Lik':>14}  {'Improvement':>13}  {'Time(s)':>8}"
+        for j in range(c_used):
+            hdr += f"  {'C'+str(j+1)+' soft_n':>{col_w}}  {'pi_'+str(j+1):>8}"
+        lines.append(hdr)
+        lines.append("-" * len(hdr))
+        for entry in iter_log:
+            row = (f"{entry['iteration']:>5}  {entry['log_likelihood']:>14.4f}"
+                   f"  {entry['improvement']:>+13.4f}  {entry['elapsed']:>8.2f}")
+            for j in range(c_used):
+                row += f"  {entry['soft_n'][j]:>{col_w}.2f}  {entry['pis'][j]:>8.4f}"
+            lines.append(row)
+        lines.append("")
+
+    # ── Cluster parameters ───────────────────────────────────────────────────
+    lines += [thin, "CLUSTER PARAMETERS", thin]
+    hdr = f"{'Cluster':<10} {'pi':<10}" + "  ".join(f"{p:<12}" for p in param_names)
+    lines.append(hdr)
+    lines.append("-" * len(hdr))
+    for j in range(c_used):
+        row = f"{j+1:<10} {result['pis'][j]:<10.6f}" + "  ".join(f"{v:<12.6f}" for v in result["thetas"][j])
+        lines.append(row)
+    lines.append("")
+
+    # ── Individual estimates: ksi and tau ────────────────────────────────────
+    lines += [thin, "INDIVIDUAL ESTIMATES (ksi and tau)", thin]
+    hdr = f"{'Subject':<30}  {'ksi':>12}"
+    for j in range(c_used):
+        hdr += f"  {'tau_C'+str(j+1):>12}"
+    lines.append(hdr)
+    lines.append("-" * len(hdr))
+    resp = result.get("resp")
+    for i, subj in enumerate(subjects):
+        row = f"{str(subj):<30}  {result['ksi'][i]:>12.6f}"
+        if resp is not None:
+            for j in range(c_used):
+                row += f"  {resp[i, j]:>12.6f}"
+        lines.append(row)
+    lines.append("")
+
+    with open(filepath, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(lines) + "\n")
+    print(f"Results written to {filepath}")
 
 
 if __name__ == "__main__":
 
     SEEDS = [10, 20, 30, 40, 50, 60, 70, 80]
 
-    em_mixture_best_of(
+    y        = get_observed_ce(export_excel=False)
+    subjects = sorted(y["participant_label"].unique())
+
+    best = em_mixture_best_of(
         n_restarts=len(SEEDS),
         seeds=SEEDS,
+        y=y,
     )
+
+    # Attach metadata needed by write_em_results
+    best["method_used"] = method
+    if "subjects" not in best or best["subjects"] is None:
+        best["subjects"] = subjects
+
+    write_em_results(best, filepath="em_results.txt")
