@@ -5,11 +5,11 @@ import lotteries
 import os
 
 GlobalMethod = "prelec"
-GlobalLottery = lotteries.lotteries_full
-GlobalCluster = 2
+GlobalLottery = lotteries.lotteries_v2
+GlobalCluster = 3
 GlobalStarts = 8
 GlobalTol = 1e-4
-GlobalInterMax = 100
+GlobalInterMax = 500
 
 # Bounds for different methods
 
@@ -23,4 +23,4 @@ GlobalPrelecBounds = [
     ]
 
 
-GlobalSeedsSet = [10, 25, 30, 45, 78, 29]
+GlobalSeedsSet = [10, 25, 30, 45, 78, 29, 16, 23, 37, 50, 55, 60, 67, 80, 89]

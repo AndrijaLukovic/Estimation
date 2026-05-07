@@ -5,6 +5,7 @@ from scipy.stats import norm
 import functions as f
 from lotteries import lotteries_full, one, all_high_stake, all_low_stake
 from main import get_observed_ce
+from GlobalSettings import GlobalTKBounds, GlobalPrelecBounds
 import openpyxl
 
 
@@ -16,20 +17,16 @@ estimation_style = "single" #"mixture" or "single"
 
 cluster_number = 3
 
-# Structural parameter bounds — only the probability weighting bounds differ
-_shared_front = [(1e-4, 0.2), (0.5, 1.5), (1, 3)]  # r, alpha, lamb
-_w_bound      = [(0,0)]                             # w: forward-looking fraction R_l = w*E[L_l] (Phase 1)
-_clsuter_range = [(0,0)]
-
-
+# Structural parameter bounds — shared front (r, alpha, lamb, gamma/prelec) from GlobalSettings.
+# MLE uses a single forward-looking weight w fixed to 0 instead of EM's (a1,a2,a3,delta).
+_w_bound = [(0, 0)]
 
 if estimation_style == "single":
-    bounds_tk     = _shared_front + [(0.2, 1)]          + _w_bound  # + gamma, w
-    bounds_prelec = _shared_front + [(1,1), (0.1, 0.8)] + _w_bound  # + beta, palpha, w
+    bounds_tk     = list(GlobalTKBounds[:4])    + _w_bound
+    bounds_prelec = list(GlobalPrelecBounds[:5]) + _w_bound
 else:
-    bounds_tk     = _shared_front + [(0.2, 1)]          + _clsuter_range * cluster_number + _w_bound
-    bounds_prelec = _shared_front + [(1,1), (0.1, 0.8)] + _clsuter_range * cluster_number + _w_bound
-
+    bounds_tk     = list(GlobalTKBounds[:4])    + [(0, 0)] * cluster_number + _w_bound
+    bounds_prelec = list(GlobalPrelecBounds[:5]) + [(0, 0)] * cluster_number + _w_bound
 
 bounds = bounds_tk if prob_weighter == "tk" else bounds_prelec
 

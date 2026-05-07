@@ -24,24 +24,35 @@ def process(export_excel=False, excel_path="pilot.xlsx"):
     """
 # XG: i will updeate this function so that: (1) it returns the average of the selected and cutoff, (2) it returns the refined choice, if there is one.
     
-    data = pd.read_csv("pilot.csv", skipinitialspace=True)
+    data = pd.read_csv("pilotdata1.csv", sep=";", skipinitialspace=True)
     data.columns = data.columns.str.strip()
-    
+    for col in data.select_dtypes(include="object").columns:
+        data[col] = data[col].str.strip()
+
     data.dropna(axis=0, how="any", subset=["participant_label", "realized_period1_label"], inplace=True)
     
+    # Drop participants who did not complete the post-experiment questionnaire.
+    # quiz6 is only filled in one row per participant; a participant is incomplete
+    # if they have no row at all where quiz6 is non-null.
+    has_quiz6 = data.groupby("participant_label")["quiz6"].apply(lambda x: x.notna().any())
+    incomplete_subjects = has_quiz6[~has_quiz6].index
+    data = data[~data["participant_label"].isin(incomplete_subjects)]
+
     # Drop rows who report too complicated in the post experiment questionnaire.
-    
     to_drop_subjects = data[data["quiz6"] == "Very complicated"]["participant_label"].unique()
     data = data[~data["participant_label"].isin(to_drop_subjects)]
 
     # Drop participants who are too fast 
     # (TODO:this module is not done. Later, it should support dropping based on response times by page timeout and by indication of total experiment time.)
-    participant_ids_todrop = [
+    """     participant_ids_todrop = [
         "69722ac00c49f0720d607948",
         "5e4feb8037713502e9ed364b"
-    ]
-
+    ] 
+    
     data = data[~data["participant_label"].isin(participant_ids_todrop)]
+    """
+
+    
 
 
     # Use refined values when present; otherwise fall back to coarse values.

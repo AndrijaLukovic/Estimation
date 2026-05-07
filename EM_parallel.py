@@ -31,7 +31,7 @@ import io
 import os
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from GlobalSettings import GlobalMethod, GlobalLottery, GlobalCluster, GlobalStarts, GlobalTol, GlobalPrelecBounds, GlobalTKBounds, GlobalInterMax
+from GlobalSettings import GlobalMethod, GlobalLottery, GlobalCluster, GlobalStarts, GlobalTol, GlobalPrelecBounds, GlobalTKBounds, GlobalInterMax, GlobalSeedsSet
 
 import numpy as np
 import pandas as pd
@@ -121,7 +121,7 @@ def _restart_worker(args):
     with contextlib.redirect_stdout(buf):
         result = em_mixture(
             method=method_arg, c=c, y=y_df, lotteries=lotteries,
-            max_iter=max_iter, tol=tol,
+            max_iter=max_iter, tol=tol, seed=seed,
         )
     elapsed = time.time() - t0
     return result, buf.getvalue(), restart_id, elapsed
@@ -321,93 +321,123 @@ def em_mixture_parallel(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_em_multistart(
-    n_restarts=8, method=method, c=C, y=None, lotteries=None,
+    seeds=None, n_restarts=8, method=method, c=C, y=None, lotteries=None,
     max_iter=GlobalInterMax, tol=GlobalTol, n_workers=None,
 ):
     """
-    Run the EM algorithm from n_restarts different random initialisations
-    in parallel and return the result with the highest log-likelihood.
+    Run the EM algorithm from multiple initialisations in parallel and return
+    the result with the highest log-likelihood.
 
     Each worker runs a full serial EM (no nested parallelism).
-    Stdout from workers is suppressed; progress is printed in the main process.
+    Per-seed LL, iteration count, and convergence are printed in a summary
+    table once all workers finish, mirroring the parameter-recovery report.
 
     Parameters
     ----------
+    seeds : list of int or None
+        Explicit RNG seeds for each restart.  Pass GlobalSeedsSet for
+        reproducible results.  If None, n_restarts random seeds are drawn.
     n_restarts : int
-        Number of independent EM runs.  8–16 is a reasonable default.
-    n_workers  : int or None
+        Used only when seeds is None.
+    n_workers : int or None
         Maximum parallel workers.  None → os.cpu_count().
 
     Returns
     -------
-    dict  {"thetas", "pis", "ksi", "log_likelihood"}  — best result found.
+    dict  {"thetas", "pis", "ksi", "log_likelihood", ...}  — best result found.
     """
     if y is None:
         y = get_observed_ce(export_excel=False)
     if lotteries is None:
         lotteries = f.transform(lottery)
 
-    # Filter y once before sending to workers — em_mixture would filter again
-    # anyway, but sending the pre-filtered DataFrame avoids redundant work and
-    # keeps each worker's DataFrame smaller.
+    if seeds is None:
+        rng   = np.random.default_rng()
+        seeds = rng.integers(0, 2**31, size=n_restarts).tolist()
+
     spreads = {lid: lotteries[lid]["spread"] for lid in lotteries}
     y       = y[y["lottery_id"].isin(lotteries.keys())].copy()
     y["spread"] = y["lottery_id"].map(spreads)
-
-    # Use full int32 range to avoid seed collisions for large n_restarts
-    rng   = np.random.default_rng()
-    seeds = rng.integers(0, 2**31, size=n_restarts).tolist()
 
     worker_args = [
         (seed, method, c, y, lotteries, max_iter, tol, i + 1)
         for i, seed in enumerate(seeds)
     ]
 
+    all_results = {}   # seed → {"result": ..., "elapsed": ...}
     best_result = None
     best_ll     = -np.inf
     completed   = 0
+    n = len(seeds)
 
-    print(f"Running {n_restarts} EM restarts in parallel (C={c}, method={method!r})...")
-    print(f"  Output prints as each restart finishes.\n", flush=True)
+    print(f"\nRunning {n} EM restarts in parallel  (C={c}  method={method!r}  tol={tol})")
+    print(f"  Seeds: {seeds}\n", flush=True)
 
     with ProcessPoolExecutor(max_workers=n_workers) as executor:
-        futures = {executor.submit(_restart_worker, a): i
-                   for i, a in enumerate(worker_args)}
+        # Map future → seed so we can label results even when they finish out of order
+        futures = {executor.submit(_restart_worker, a): a[0] for a in worker_args}
         for future in as_completed(futures):
             completed += 1
+            seed_used = futures[future]
             result, log_output, restart_id, elapsed = future.result()
             ll = result["log_likelihood"]
 
-            # Print the captured per-iteration log with restart prefix
-            prefix = f"[R{restart_id:02d}]"
+            all_results[seed_used] = {"result": result, "elapsed": elapsed}
+
+            prefix = f"[S{seed_used}]"
             for line in log_output.splitlines():
                 print(f"  {prefix} {line}", flush=True)
-            print(f"  {prefix} DONE in {elapsed:.1f}s | LL = {ll:.4f}", flush=True)
+            conv_str = "converged" if result["converged"] else "NOT converged"
+            print(f"  {prefix} DONE  {elapsed:.1f}s  LL={ll:.4f}  {result['n_iter']} iters  {conv_str}",
+                  flush=True)
 
             if ll > best_ll:
                 best_ll     = ll
                 best_result = result
-                print(f"  >>> [{completed}/{n_restarts}] New best LL: {best_ll:.4f}\n", flush=True)
+                print(f"  >>> [{completed}/{n}] new best  LL={best_ll:.4f}\n", flush=True)
             else:
-                print(f"      [{completed}/{n_restarts}] completed\n", flush=True)
+                print(f"      [{completed}/{n}] completed\n", flush=True)
 
     if best_result is None:
         raise RuntimeError("All EM restarts failed to return a result.")
 
-    print(f"\nBest LL across {n_restarts} restarts: {best_ll:.4f}")
+    # ── Per-seed summary table ─────────────────────────────────────────────────
+    sep  = "=" * 68
+    thin = "-" * 68
+    print(f"\n{sep}")
+    print(f"  SEED SUMMARY   method={method!r}   C={c}   tol={tol}")
+    print(sep)
+    print(f"  {'Seed':>8}   {'Log-Likelihood':>16}   {'Iters':>5}   "
+          f"{'Converged':>9}   {'Time(s)':>7}")
+    print(thin)
+    for s in seeds:
+        if s not in all_results:
+            print(f"  {s:>8}   {'FAILED':>16}")
+            continue
+        r  = all_results[s]["result"]
+        el = all_results[s]["elapsed"]
+        ll_s = r["log_likelihood"]
+        mark = "  ← best" if ll_s == best_ll else ""
+        print(f"  {s:>8}   {ll_s:>16.4f}   {r['n_iter']:>5}   "
+              f"{str(r['converged']):>9}   {el:>7.1f}{mark}")
+    print(sep)
 
-    # Re-print the winning cluster summary
+    # ── Winner's cluster parameters ────────────────────────────────────────────
     param_names = {
         "tk":     ["r", "α", "λ", "γ",  "a1", "a2", "a3", "δ"],
         "prelec": ["r", "α", "λ", "β",  "pα", "a1", "a2", "a3", "δ"],
     }[method]
-    print(f"\n{'Cluster':<10} {'π':<8} " + "  ".join(f"{p:<8}" for p in param_names))
-    print("-" * (10 + 8 + 10 * len(param_names)))
+    print(f"\n  Best seed: {best_result['seed']}   LL = {best_ll:.4f}\n")
+    print(f"  {'Cluster':<10} {'π':<8} " + "  ".join(f"{p:<8}" for p in param_names))
+    print("  " + "-" * (10 + 8 + 10 * len(param_names)))
     for j in range(c):
-        print(f"{j+1:<10} {best_result['pis'][j]:<8.3f} " +
+        print(f"  {j+1:<10} {best_result['pis'][j]:<8.3f} " +
               "  ".join(f"{v:<8.4f}" for v in best_result['thetas'][j]))
+    print()
 
     best_result["method_used"] = method
+    best_result["all_results"] = all_results   # per-seed data for write_em_results()
+    best_result["seeds_used"]  = seeds
     return best_result
 
 
@@ -423,7 +453,7 @@ if __name__ == "__main__":
     subjects   = sorted(y["participant_label"].unique())
 
     result = run_em_multistart(
-        n_restarts=8,
+        seeds=GlobalSeedsSet,
         method=method,
         c=C,
         y=y,

@@ -70,7 +70,7 @@ METHOD    = GlobalMethod
 LOTTERY   = GlobalLottery
 C         = GlobalCluster
 
-ALL_SEEDS = [10, 15, 20, 25]   
+ALL_SEEDS = GlobalSeedsSet   
 # ─────────────────────────────────────────────────────────────────────────────
 
 

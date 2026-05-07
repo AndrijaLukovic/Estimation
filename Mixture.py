@@ -11,7 +11,7 @@ from scipy.special import logsumexp
 import functions as f
 from lotteries import lotteries_full, one, all_high_stake, all_low_stake
 from main import get_observed_ce
-from GlobalSettings import GlobalTKBounds, GlobalPrelecBounds, GlobalMethod, GlobalLottery, GlobalCluster, GlobalTol
+from GlobalSettings import GlobalTKBounds, GlobalPrelecBounds, GlobalMethod, GlobalLottery, GlobalCluster, GlobalTol, GlobalInterMax, GlobalSeedsSet
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed, wait, FIRST_COMPLETED
 
 
@@ -214,6 +214,59 @@ def _cluster_ll(j, params, method, n, EL_arr, t_arr, Z1_arr, Z2_arr,
 
 
 
+def _preprocess_rows(y, lotteries, subj_index):
+    """
+    Shared preprocessing for compute_log_likelihoods() and _ksi_mstep().
+    Filters y to the active lottery set, attaches spread / EL / session / payoff
+    columns, and converts everything to numpy arrays for the hot path.
+
+    Returns
+    -------
+    y_proc      : filtered + annotated DataFrame
+    EL_arr      : expected payoff per row          (float64)
+    t_arr       : session index 0/1/2 per row      (float64)
+    Z1_arr      : realised period-1 payoff per row (float64)
+    Z2_arr      : realised period-2 payoff per row (float64)
+    Zt_arr      : Z1 + Z2 per row                  (float64)
+    si_arr      : subject integer index per row    (int)
+    spread_arr  : lottery spread per row           (float64)
+    obs_arr     : observed CE per row              (float64)
+    """
+    def _parse_col(col):
+        return pd.to_numeric(
+            col.str.replace("£", "", regex=False), errors="coerce"
+        ).fillna(0).astype(int)
+
+    y_proc = y[y["lottery_id"].isin(lotteries.keys())].copy().reset_index(drop=True)
+    y_proc["spread"] = y_proc["lottery_id"].map(
+        {lid: lotteries[lid]["spread"] for lid in lotteries}
+    )
+    y_proc["_EL"] = y_proc["lottery_id"].map(
+        {lid: f.expected_payoff(lotteries[lid]["outcomes"]) for lid in lotteries}
+    )
+    s2 = y_proc["round_number"] == 15
+    s3 = y_proc["round_number"] >= 16
+    y_proc["_t"]  = s2.astype(int) + 2 * s3.astype(int)  # 0=s1, 1=s2, 2=s3
+    y_proc["_Z1"] = np.where(s2 | s3, _parse_col(y_proc["realized_period1_label"]), 0)
+    y_proc["_Z2"] = np.where(s3,      _parse_col(y_proc["realized_period2_label"]), 0)
+    y_proc["_Zt"] = y_proc["_Z1"] + y_proc["_Z2"]
+    y_proc["_si"] = y_proc["participant_label"].map(subj_index)
+    y_proc["_ckey"] = list(zip(
+        y_proc["lottery_id"], y_proc["_t"], y_proc["_Z1"], y_proc["_Z2"]
+    ))
+
+    EL_arr     = y_proc["_EL"].values.astype(float)
+    t_arr      = y_proc["_t"].values.astype(float)
+    Z1_arr     = y_proc["_Z1"].values.astype(float)
+    Z2_arr     = y_proc["_Z2"].values.astype(float)
+    Zt_arr     = y_proc["_Zt"].values.astype(float)
+    si_arr     = y_proc["_si"].values
+    spread_arr = y_proc["spread"].values.astype(float)
+    obs_arr    = y_proc["ce_observed"].values.astype(float)
+
+    return y_proc, EL_arr, t_arr, Z1_arr, Z2_arr, Zt_arr, si_arr, spread_arr, obs_arr
+
+
 def compute_log_likelihoods(thetas, ksi, method=method, c=C, subjects=None, y=None, lotteries=None):
     """
     Returns an (n, c) matrix where entry [i, j] is the total log-likelihood
@@ -255,50 +308,12 @@ def compute_log_likelihoods(thetas, ksi, method=method, c=C, subjects=None, y=No
     n = len(subjects)
     subj_index = {s: i for i, s in enumerate(subjects)}
 
-    y = y[y["lottery_id"].isin(lotteries.keys())].copy().reset_index(drop=True)
-    spreads = {lid: lotteries[lid]["spread"] for lid in lotteries}
-    y["spread"] = y["lottery_id"].map(spreads)
+    y, EL_arr, t_arr, Z1_arr, Z2_arr, Zt_arr, si_arr, spread_arr, obs_arr = \
+        _preprocess_rows(y, lotteries, subj_index)
 
-    # ── Precompute per-row quantities that don't depend on cluster params ────
-    # EL: expected payoff of each lottery — same for every row with that lottery_id
-    EL_map = {lid: f.expected_payoff(lotteries[lid]["outcomes"]) for lid in lotteries}
-    y["_EL"] = y["lottery_id"].map(EL_map)
-
-    # Session indicator: t=0 (s1), t=1 (s2), t=2 (s3)
-    s2 = y["round_number"] == 15
-    s3 = y["round_number"] >= 16
-    y["_t"] = s2.astype(int) + s3.astype(int)
-
-    # Realised payoffs — vectorized label parsing; 0 where not yet observed
-    def _parse_col(col):
-        return pd.to_numeric(
-            col.str.replace("£", "", regex=False), errors="coerce"
-        ).fillna(0).astype(int)
-
-    y["_Z1"] = np.where(s2 | s3, _parse_col(y["realized_period1_label"]), 0)
-    y["_Z2"] = np.where(s3,      _parse_col(y["realized_period2_label"]), 0)
-    y["_Zt"] = y["_Z1"] + y["_Z2"]
-
-    # Subject integer index per row (for np.add.at accumulation)
-    y["_si"] = y["participant_label"].map(subj_index)
-
-    # sigma = ksi_i * spread_l  (same across clusters for a given ksi)
-    ksi_arr  = np.array([ksi[subj_index[s]] for s in y["participant_label"]])
-    y["_sigma"] = ksi_arr * y["spread"].values
-
-    # Cache key: uniquely determines R_l for any fixed cluster params
-    # (lottery_id, t, Z1, Z2) → same EL, same RA, same RLE → same R_l
-    y["_ckey"] = list(zip(y["lottery_id"], y["_t"], y["_Z1"], y["_Z2"]))
-
-    # Numpy arrays for hot-path computation
-    EL_arr  = y["_EL"].values.astype(float)
-    t_arr   = y["_t"].values.astype(float)
-    Z1_arr  = y["_Z1"].values.astype(float)
-    Z2_arr  = y["_Z2"].values.astype(float)
-    Zt_arr  = y["_Zt"].values.astype(float)
-    si_arr  = y["_si"].values
-    sig_arr = y["_sigma"].values
-    obs_arr = y["ce_observed"].values.astype(float)
+    ksi_arr     = np.array([ksi[subj_index[s]] for s in y["participant_label"]])
+    sig_arr     = ksi_arr * spread_arr
+    y["_sigma"] = sig_arr
 
     log_L = np.zeros((n, c))
 
@@ -342,38 +357,8 @@ def _ksi_mstep(resp, thetas, ksi, method, c, subjects, y, lotteries):
     n = len(subjects)
     subj_index = {s: i for i, s in enumerate(subjects)}
 
-    # ── Preprocessing (identical to compute_log_likelihoods, ksi-independent) ──
-    y_proc = y[y["lottery_id"].isin(lotteries.keys())].copy().reset_index(drop=True)
-    spreads_map = {lid: lotteries[lid]["spread"] for lid in lotteries}
-    y_proc["spread"] = y_proc["lottery_id"].map(spreads_map)
-
-    EL_map = {lid: f.expected_payoff(lotteries[lid]["outcomes"]) for lid in lotteries}
-    y_proc["_EL"] = y_proc["lottery_id"].map(EL_map)
-
-    s2 = y_proc["round_number"] == 15
-    s3 = y_proc["round_number"] >= 16
-    y_proc["_t"] = s2.astype(int) + s3.astype(int)
-
-    def _parse_col(col):
-        return pd.to_numeric(
-            col.str.replace("£", "", regex=False), errors="coerce"
-        ).fillna(0).astype(int)
-
-    y_proc["_Z1"] = np.where(s2 | s3, _parse_col(y_proc["realized_period1_label"]), 0)
-    y_proc["_Z2"] = np.where(s3,      _parse_col(y_proc["realized_period2_label"]), 0)
-    y_proc["_Zt"] = y_proc["_Z1"] + y_proc["_Z2"]
-    y_proc["_si"] = y_proc["participant_label"].map(subj_index)
-    y_proc["_ckey"] = list(zip(y_proc["lottery_id"], y_proc["_t"],
-                               y_proc["_Z1"], y_proc["_Z2"]))
-
-    EL_arr     = y_proc["_EL"].values.astype(float)
-    t_arr      = y_proc["_t"].values.astype(float)
-    Z1_arr     = y_proc["_Z1"].values.astype(float)
-    Z2_arr     = y_proc["_Z2"].values.astype(float)
-    Zt_arr     = y_proc["_Zt"].values.astype(float)
-    si_arr     = y_proc["_si"].values
-    spread_arr = y_proc["spread"].values.astype(float)
-    obs_arr    = y_proc["ce_observed"].values.astype(float)
+    y_proc, EL_arr, t_arr, Z1_arr, Z2_arr, Zt_arr, si_arr, spread_arr, obs_arr = \
+        _preprocess_rows(y, lotteries, subj_index)
 
     # ── Precompute ce_th for every cluster — ONE pass, no ksi needed ──────────
     # ce_th_all shape: (n_rows, c)
@@ -570,7 +555,7 @@ def em_mixture_best_of(n_restarts, seeds=None, n_workers=None, **em_kwargs):
 
 
 def em_mixture(thetas=None, pis=None, ksi=None, subjects=None, method=method, c=C,
-               y=None, lotteries=None, max_iter=100, tol=1e-6, seed=None, verbose=True,
+               y=None, lotteries=None, max_iter=GlobalInterMax, tol=1e-6, seed=None, verbose=True,
                progress_queue=None):
 
     if y is None:
@@ -821,6 +806,36 @@ def write_em_results(result, filepath="em_results.txt"):
     lines.append(f"  Seed          : {result.get('seed', 'N/A')}")
     lines.append(f"  Log-Likelihood: {result['log_likelihood']:.6f}")
     lines.append("")
+
+    # ── Per-seed comparison (present when run via run_em_multistart) ─────────
+    all_results = result.get("all_results")
+    seeds_used  = result.get("seeds_used")
+    if all_results and seeds_used:
+        best_ll = result["log_likelihood"]
+        pw      = 10   # column width for parameter values
+
+        lines += [thin, "MULTISTART SEED COMPARISON", thin]
+
+        # One block per cluster
+        for j in range(c_used):
+            lines.append(f"  Cluster {j+1}")
+            hdr  = f"  {'Seed':>6}  {'Log-Lik':>12}  {'Conv':>5}  {'pi':>{pw}}"
+            hdr += "".join(f"  {p:>{pw}}" for p in param_names)
+            lines.append(hdr)
+            lines.append("  " + "-" * (len(hdr) - 2))
+            for s in seeds_used:
+                if s not in all_results:
+                    lines.append(f"  {s:>6}  {'FAILED':>12}")
+                    continue
+                r    = all_results[s]["result"]
+                ll_s = r["log_likelihood"]
+                conv = "Y" if r["converged"] else "N"
+                mark = "  <- best" if ll_s == best_ll else ""
+                row  = f"  {s:>6}  {ll_s:>12.4f}  {conv:>5}  {r['pis'][j]:>{pw}.6f}"
+                row += "".join(f"  {v:>{pw}.6f}" for v in r["thetas"][j])
+                row += mark
+                lines.append(row)
+            lines.append("")
 
     # ── Iteration overview ───────────────────────────────────────────────────
     iter_log = result.get("iter_log", [])
