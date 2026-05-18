@@ -11,7 +11,7 @@ from scipy.special import logsumexp
 import functions as f
 from lotteries import lotteries_full, one, all_high_stake, all_low_stake
 from main import get_observed_ce
-from GlobalSettings import GlobalTKBounds, GlobalPrelecBounds, GlobalMethod, GlobalLottery, GlobalCluster, GlobalTol, GlobalInterMax, GlobalSeedsSet
+from GlobalSettings import GlobalTKBounds, GlobalPrelecBounds, GlobalMethod, GlobalLottery, GlobalCluster, GlobalTol, GlobalInterMax, GlobalSeedsSet, GlobalKsiBounds
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed, wait, FIRST_COMPLETED
 
 
@@ -391,7 +391,7 @@ def _ksi_mstep(resp, thetas, ksi, method, c, subjects, y, lotteries):
                                   sigma_i[:, None]).sum(axis=0) # (c,)
             return -np.dot(resp_i, ll_ij)
 
-        res = minimize_scalar(obj, bounds=(1e-4, 5.0), method="bounded")
+        res = minimize_scalar(obj, bounds=GlobalKsiBounds, method="bounded")
         return i, res.x
 
     # ── Parallel execution (numpy logpdf releases the GIL) ────────────────────

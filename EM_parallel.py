@@ -31,7 +31,7 @@ import io
 import os
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from GlobalSettings import GlobalMethod, GlobalLottery, GlobalCluster, GlobalStarts, GlobalTol, GlobalPrelecBounds, GlobalTKBounds, GlobalInterMax, GlobalSeedsSet
+from GlobalSettings import GlobalMethod, GlobalLottery, GlobalCluster, GlobalTol, GlobalPrelecBounds, GlobalTKBounds, GlobalInterMax, GlobalSeedsSet, GlobalKsiBounds
 
 import numpy as np
 import pandas as pd
@@ -279,7 +279,7 @@ def em_mixture_parallel(
                 return -float(np.sum(resp * log_L_tmp))
 
             res = minimize(neg_weighted_ll_ksi, ksi, method="L-BFGS-B",
-                           bounds=[(1e-4, 5)] * n)
+                           bounds=[GlobalKsiBounds] * n)
             ksi = res.x
 
             iter_log.append({
@@ -444,9 +444,15 @@ def run_em_multistart(
 # ─────────────────────────────────────────────────────────────────────────────
 # Standalone entry point
 # ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# Standalone entry point
+# ─────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     # Required on Windows: all multiprocessing code must be inside this guard.
+
+    from datetime import datetime
+    from pathlib import Path
 
     y          = get_observed_ce(export_excel=False)
     lotteries  = f.transform(lottery)
@@ -465,14 +471,25 @@ if __name__ == "__main__":
         "tk":     ["r", "alpha", "lamb", "gamma", "a1", "a2", "a3", "delta"],
         "prelec": ["r", "alpha", "lamb", "beta",  "palpha", "a1", "a2", "a3", "delta"],
     }[method]
+
     for j in range(C):
         print(f"\n  Cluster {j+1} (π={result['pis'][j]:.3f}):")
         for name, val in zip(param_names, result["thetas"][j]):
             print(f"    {name:<10} = {val:.4f}")
+
     print(f"\nFinal LL: {result['log_likelihood']:.4f}")
 
     # Attach subjects if not already set by the best em_mixture run
     if not result.get("subjects"):
         result["subjects"] = subjects
 
-    write_em_results(result, filepath="em_results.txt")
+    # Avoid overwriting results when running multiple tmux panes
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    outdir = Path("em_outputs")
+    outdir.mkdir(exist_ok=True)
+
+    outfile = outdir / f"em_results_{method}_C{C}_{timestamp}.txt"
+
+    write_em_results(result, filepath=str(outfile))
+
+    print(f"\nSaved results to: {outfile}")
