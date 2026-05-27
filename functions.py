@@ -371,15 +371,15 @@ def ce_th_series(y, r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, lotteries=tr
     """
     Return a Series of theoretical CEs aligned with rows of y,
     with Z_t already subtracted per row.
-    round < 15  : session 1, Z_t = 0
-    round == 15 : session 2, Z_t = period-1 payoff
-    round == 16 : session 3, Z_t = period-1 + period-2 payoff
+    round <= 16 : session 1, Z_t = 0
+    round == 17 : session 2, Z_t = period-1 payoff
+    round == 18 : session 3, Z_t = period-1 + period-2 payoff
     """
     base = ce_dict(r, gamma, alpha, lamb, R, lotteries=lotteries, method=method, beta=beta, palpha=palpha)
     zt = y.apply(
         lambda row: realized_zt(
-            period1_label=row["realized_period1_label"] if row["round_number"] >= 15 else None,
-            period2_label=row["realized_period2_label"] if row["round_number"] >= 16 else None,
+            period1_label=row["realized_period1_label"] if row["round_number"] in (17, 18) else None,
+            period2_label=row["realized_period2_label"] if row["round_number"] == 18 else None,
         ), axis=1
     )
     return y["lottery_id"].map(base) - zt

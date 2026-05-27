@@ -1,16 +1,18 @@
 """
 Two-step EM estimation for reference-dependent preferences.
 
-Step 1  (session 1 only, a2=a3=0 fixed)
-    Data    : round_number < 15
-    Fixed   : r=0, a2=0, a3=0
-    Estimated: alpha, lambda, palpha, a1  (+delta, irrelevant in session 1)
-    Identifies from: cross-lottery CE variation (different gain/loss profiles)
+Step 1  (session 1 only, a2=a3=delta=0 fixed)
+    Data    : round_number <= 16
+    Fixed   : r=0, a2=0, a3=0, delta=0
+    Estimated: alpha, lambda, palpha  (preference params)
+               a1                    (reference-point weight on status quo)
+    Note    : In session 1, Z1=Z2=0 so a2·Z1=a3·Z2=0 identically;
+              R_l = (1-a1)·EL, identifying a1 from cross-lottery CE variation.
 
 Step 2  (all sessions, preference params fixed)
     Data    : all sessions
-    Fixed   : r, alpha, lambda, palpha, a1  from Step 1
-    Estimated: a2, a3, delta  (reference-point dynamics)
+    Fixed   : r, alpha, lambda, palpha  (preference params from Step 1)
+    Estimated: a1, a2, a3, delta  (all reference-point weights, jointly)
     Identifies from: within-subject CE changes as Z1/Z2 vary across sessions
 
 Usage:
@@ -39,10 +41,13 @@ from Mixture import (
 from main import get_observed_ce
 
 
-# ── Index constants (Prelec parameter order) ─────────────────────────────────
-# [r, alpha, lambda, beta, palpha, s1, s2, s3, delta]
+# ── Index constants ───────────────────────────────────────────────────────────
+# Prelec: [r, alpha, lambda, beta, palpha, s1, s2, s3, delta]
 _I_R, _I_ALPHA, _I_LAM, _I_BETA, _I_PALPHA = 0, 1, 2, 3, 4
 _I_S1, _I_S2, _I_S3, _I_DELTA = 5, 6, 7, 8
+# TK:     [r, alpha, lambda, gamma, a1, a2, a3, delta]
+_TK_R, _TK_ALPHA, _TK_LAM, _TK_GAMMA = 0, 1, 2, 3
+_TK_A1, _TK_A2, _TK_A3, _TK_DELTA = 4, 5, 6, 7
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -53,29 +58,40 @@ _I_S1, _I_S2, _I_S3, _I_DELTA = 5, 6, 7, 8
 def run_step1(y_full, lotteries, method=GlobalMethod, c=GlobalCluster,
               seeds=GlobalSeedsSet):
     """
-    Step 1: session-1-only EM with a2=a3 pinned at 0.
+    Step 1: session-1-only EM with a2=a3=delta pinned at 0.
 
-    Patches GlobalPrelecBounds in-place so that child processes spawned by
-    run_em_multistart inherit the modification (Linux fork semantics).
-    The patch is always restored before returning.
+    Patches GlobalPrelecBounds or GlobalTKBounds in-place so that child
+    processes spawned by run_em_multistart inherit the modification
+    (Linux fork semantics).  The patch is always restored before returning.
     """
-    y_s1 = y_full[y_full["round_number"] < 15].copy()
+    y_s1 = y_full[y_full["round_number"] <= 16].copy()
+
+    if method == "prelec":
+        bounds_obj         = GlobalSettings.GlobalPrelecBounds
+        i_a2, i_a3, i_d   = _I_S2, _I_S3, _I_DELTA
+        free_desc          = "alpha, lambda, palpha, a1"
+    elif method == "tk":
+        bounds_obj         = GlobalSettings.GlobalTKBounds
+        i_a2, i_a3, i_d   = _TK_A2, _TK_A3, _TK_DELTA
+        free_desc          = "alpha, lambda, gamma, a1"
+    else:
+        raise NotImplementedError(f"run_step1: unsupported method {method!r}")
 
     print(f"\n{'='*60}")
     print(f"  STEP 1  |  session 1 only  |  {len(y_s1)} obs")
     print(f"  Fixed: a2=a3=delta=0  (only forward-looking + SQ components)")
-    print(f"  Free : alpha, lambda, palpha, a1  (a4 = 1 - a1)")
+    print(f"  Free : {free_desc}  (a4 = 1 - a1)")
     print(f"{'='*60}")
 
     # In session 1 (t=0): RA=RLE=0, so R_l = a4*EL = (1-a1)*EL.
     # a1 is identified from how much R_l deviates from EL across lotteries.
     # a2, a3, delta are pinned to 0 (unidentified without Z1/Z2 variation).
-    orig_s2    = GlobalSettings.GlobalPrelecBounds[_I_S2]
-    orig_s3    = GlobalSettings.GlobalPrelecBounds[_I_S3]
-    orig_delta = GlobalSettings.GlobalPrelecBounds[_I_DELTA]
-    GlobalSettings.GlobalPrelecBounds[_I_S2]    = (0.0, 0.0)
-    GlobalSettings.GlobalPrelecBounds[_I_S3]    = (0.0, 0.0)
-    GlobalSettings.GlobalPrelecBounds[_I_DELTA] = (0.0, 0.0)
+    orig_a2 = bounds_obj[i_a2]
+    orig_a3 = bounds_obj[i_a3]
+    orig_d  = bounds_obj[i_d]
+    bounds_obj[i_a2] = (0.0, 0.0)
+    bounds_obj[i_a3] = (0.0, 0.0)
+    bounds_obj[i_d]  = (0.0, 0.0)
 
     try:
         result = run_em_multistart(
@@ -84,13 +100,13 @@ def run_step1(y_full, lotteries, method=GlobalMethod, c=GlobalCluster,
             max_iter=GlobalInterMax, tol=GlobalTol,
         )
     finally:
-        GlobalSettings.GlobalPrelecBounds[_I_S2]    = orig_s2
-        GlobalSettings.GlobalPrelecBounds[_I_S3]    = orig_s3
-        GlobalSettings.GlobalPrelecBounds[_I_DELTA] = orig_delta
+        bounds_obj[i_a2] = orig_a2
+        bounds_obj[i_a3] = orig_a3
+        bounds_obj[i_d]  = orig_d
 
     result["step"]        = 1
     result["method_used"] = method
-    result["data_note"]   = "session 1 only (round < 15)"
+    result["data_note"]   = "session 1 only (round <= 16)"
     return result
 
 
@@ -104,31 +120,42 @@ def _make_step2_bounds(theta_a, method="prelec"):
 
     theta_a   : step-1 theta in *a-space* (output of em_mixture / run_em_multistart)
     Returns bounds list in *s-space* (the optimisation space), with all step-1
-    parameters pinned and only (s2, s3, delta) free.
+    preference parameters pinned and only (a1, a2, a3, delta) free.
     """
-    if method != "prelec":
-        raise NotImplementedError("two_step_em currently supports prelec only")
-
-    r      = float(theta_a[_I_R])
-    alpha  = float(theta_a[_I_ALPHA])
-    lam    = float(theta_a[_I_LAM])
-    beta   = float(theta_a[_I_BETA])
-    palpha = float(theta_a[_I_PALPHA])
-
-    # Step 1 fixed a1=a2=a3=delta=0, so Step 2 estimates ALL reference-point
-    # weights freely. Only the preference params (alpha, lambda, palpha) are
-    # carried over from Step 1.
-    return [
-        (r,      r     ),   # r      – fixed (= 0)
-        (alpha,  alpha ),   # alpha  – fixed from Step 1
-        (lam,    lam   ),   # lambda – fixed from Step 1
-        (beta,   beta  ),   # beta   – fixed (always 1)
-        (palpha, palpha),   # palpha – fixed from Step 1
-        (0.0,    1.0   ),   # s1     – FREE → a1
-        (0.0,    1.0   ),   # s2     – FREE → a2
-        (0.0,    1.0   ),   # s3     – FREE → a3
-        (0.0,    1.0   ),   # delta  – FREE
-    ]
+    if method == "prelec":
+        r      = float(theta_a[_I_R])
+        alpha  = float(theta_a[_I_ALPHA])
+        lam    = float(theta_a[_I_LAM])
+        beta   = float(theta_a[_I_BETA])
+        palpha = float(theta_a[_I_PALPHA])
+        return [
+            (r,      r     ),   # r      – fixed (= 0)
+            (alpha,  alpha ),   # alpha  – fixed from Step 1
+            (lam,    lam   ),   # lambda – fixed from Step 1
+            (beta,   beta  ),   # beta   – fixed (always 1)
+            (palpha, palpha),   # palpha – fixed from Step 1
+            (0.0,    1.0   ),   # s1     – FREE → a1
+            (0.0,    1.0   ),   # s2     – FREE → a2
+            (0.0,    1.0   ),   # s3     – FREE → a3
+            (0.0,    1.0   ),   # delta  – FREE
+        ]
+    elif method == "tk":
+        r     = float(theta_a[_TK_R])
+        alpha = float(theta_a[_TK_ALPHA])
+        lam   = float(theta_a[_TK_LAM])
+        gamma = float(theta_a[_TK_GAMMA])
+        return [
+            (r,     r    ),   # r     – fixed (= 0)
+            (alpha, alpha),   # alpha – fixed from Step 1
+            (lam,   lam  ),   # lambda – fixed from Step 1
+            (gamma, gamma),   # gamma – fixed from Step 1
+            (0.0,   1.0  ),   # s1    – FREE → a1
+            (0.0,   1.0  ),   # s2    – FREE → a2
+            (0.0,   1.0  ),   # s3    – FREE → a3
+            (0.0,   1.0  ),   # delta – FREE
+        ]
+    else:
+        raise NotImplementedError(f"_make_step2_bounds: unsupported method {method!r}")
 
 
 def _a_to_s_theta(theta_a, method="prelec"):
@@ -137,6 +164,10 @@ def _a_to_s_theta(theta_a, method="prelec"):
     if method == "prelec":
         th[_I_S1], th[_I_S2], th[_I_S3] = _a_to_s(
             th[_I_S1], th[_I_S2], th[_I_S3]
+        )
+    elif method == "tk":
+        th[_TK_A1], th[_TK_A2], th[_TK_A3] = _a_to_s(
+            th[_TK_A1], th[_TK_A2], th[_TK_A3]
         )
     return th
 
@@ -147,6 +178,10 @@ def _s_to_a_theta(theta_s, method="prelec"):
     if method == "prelec":
         th[_I_S1], th[_I_S2], th[_I_S3] = _s_to_a(
             th[_I_S1], th[_I_S2], th[_I_S3]
+        )
+    elif method == "tk":
+        th[_TK_A1], th[_TK_A2], th[_TK_A3] = _s_to_a(
+            th[_TK_A1], th[_TK_A2], th[_TK_A3]
         )
     return th
 
@@ -169,13 +204,19 @@ def _run_step2_em_once(args):
 
     np.random.seed(seed)
 
-    # Initialise free reference-point params (s1, s2, s3, delta) randomly
+    # Indices of the free reference-point params depend on method
+    if method == "prelec":
+        i_a1, i_a2, i_a3, i_d = _I_S1, _I_S2, _I_S3, _I_DELTA
+    else:  # tk
+        i_a1, i_a2, i_a3, i_d = _TK_A1, _TK_A2, _TK_A3, _TK_DELTA
+
+    # Initialise free reference-point params randomly
     thetas = [np.array(th, dtype=float) for th in thetas_s1_s]
     for j in range(c):
-        thetas[j][_I_S1]    = np.random.uniform(0.0, 0.3)
-        thetas[j][_I_S2]    = np.random.uniform(0.0, 0.3)
-        thetas[j][_I_S3]    = np.random.uniform(0.0, 0.3)
-        thetas[j][_I_DELTA] = np.random.uniform(0.0, 0.5)
+        thetas[j][i_a1] = np.random.uniform(0.0, 0.3)
+        thetas[j][i_a2] = np.random.uniform(0.0, 0.3)
+        thetas[j][i_a3] = np.random.uniform(0.0, 0.3)
+        thetas[j][i_d]  = np.random.uniform(0.0, 0.5)
 
     y = y[y["lottery_id"].isin(lotteries.keys())].copy()
     spreads = {lid: lotteries[lid]["spread"] for lid in lotteries}
@@ -257,7 +298,8 @@ def run_step2(step1_result, y_full, lotteries, method=GlobalMethod,
     returns the best result by log-likelihood.
     """
     if seeds is None:
-        seeds = GlobalSeedsSet[:16]   # fewer seeds: only 3 free params per cluster
+        lenSeed = len(GlobalSeedsSet) // 2
+        seeds = GlobalSeedsSet[:lenSeed]   # fewer seeds: only 4 free params per cluster (a1,a2,a3,delta)
 
     subjects = sorted(y_full["participant_label"].unique())
 
@@ -266,24 +308,34 @@ def run_step2(step1_result, y_full, lotteries, method=GlobalMethod,
     pis         = step1_result["pis"].copy()
     ksi         = step1_result["ksi"].copy()
 
-    # Per-cluster bounds (pin step-1 params, free s2/s3/delta)
+    # Per-cluster bounds (pin step-1 params, free s1/s2/s3/delta)
     per_cluster_bounds = [
         _make_step2_bounds(step1_result["thetas"][j], method)
         for j in range(c)
     ]
 
+    if method == "prelec":
+        fixed_desc = "r, alpha, lambda, palpha"
+        i_a1_s1    = _I_S1
+        def _pref_str(th):
+            return (f"alpha={th[_I_ALPHA]:.3f}  lambda={th[_I_LAM]:.3f}  "
+                    f"palpha={th[_I_PALPHA]:.3f}")
+    else:  # tk
+        fixed_desc = "r, alpha, lambda, gamma"
+        i_a1_s1    = _TK_A1
+        def _pref_str(th):
+            return (f"alpha={th[_TK_ALPHA]:.3f}  lambda={th[_TK_LAM]:.3f}  "
+                    f"gamma={th[_TK_GAMMA]:.3f}")
+
     tau_mode = "FIXED tau from Step 1" if fixed_tau else "tau free (full EM)"
     print(f"\n{'='*60}")
     print(f"  STEP 2  |  all sessions  |  {len(seeds)} restarts  |  {tau_mode}")
-    print(f"  Fixed per cluster: r, alpha, lambda, palpha  (from Step 1)")
+    print(f"  Fixed per cluster: {fixed_desc}  (from Step 1)")
     print(f"  Free  per cluster: a1, a2, a3, delta")
     print(f"{'='*60}")
     for j in range(c):
-        a1 = float(step1_result["thetas"][j][_I_S1])
-        print(f"  C{j+1}: alpha={step1_result['thetas'][j][_I_ALPHA]:.3f}  "
-              f"lambda={step1_result['thetas'][j][_I_LAM]:.3f}  "
-              f"palpha={step1_result['thetas'][j][_I_PALPHA]:.3f}  "
-              f"a1={a1:.3f}")
+        a1 = float(step1_result["thetas"][j][i_a1_s1])
+        print(f"  C{j+1}: {_pref_str(step1_result['thetas'][j])}  a1={a1:.3f}")
 
     # Compute fixed responsibilities from Step 1 (using session-1-only data)
     # so the weights reflect preference-based cluster assignment
@@ -331,6 +383,38 @@ def run_step2(step1_result, y_full, lotteries, method=GlobalMethod,
 # OUTPUT
 # ══════════════════════════════════════════════════════════════════════════════
 
+def count_free_params(result, fixed_tau=True):
+    """
+    Count free parameters for BIC.
+
+    Step 1: 3 preference params (alpha, lambda, palpha/gamma)
+            + 1 reference-point param (a1) per cluster
+            + (c-1) mixing weights + one ksi per subject.
+    Step 2: 4 reference-point params (a1, a2, a3, delta) per cluster
+            + (c-1) mixing weights if tau is free, 0 if fixed
+            + one ksi per subject.
+    """
+    c          = len(result["thetas"])
+    n_subjects = len(result["subjects"])
+    step       = result.get("step", 2)
+
+    structural = 4 * c
+    if step == 1:
+        mixing = c - 1
+    else:
+        mixing = 0 if fixed_tau else c - 1
+
+    return structural + mixing + n_subjects
+
+
+def compute_bic(result, n_obs, fixed_tau=True):
+    """BIC = k * log(n) - 2 * LL."""
+    k   = count_free_params(result, fixed_tau=fixed_tau)
+    ll  = result["log_likelihood"]
+    bic = k * np.log(n_obs) - 2.0 * ll
+    return bic, k
+
+
 def print_comparison(step1, step2, method="prelec"):
     """Side-by-side parameter table: step 1 vs step 2."""
     names = {
@@ -347,6 +431,16 @@ def print_comparison(step1, step2, method="prelec"):
     print(f"{'='*W}")
     print(f"  {'':12}  {'Step 1 (S1 only)':>18}  {'Step 2 (all sessions)':>22}")
     print(f"  {'LL':12}  {step1['log_likelihood']:>18.4f}  {step2['log_likelihood']:>22.4f}")
+
+    bic1 = step1.get("bic")
+    bic2 = step2.get("bic")
+    k1   = step1.get("k_params")
+    k2   = step2.get("k_params")
+    if bic1 is not None and bic2 is not None:
+        print(f"  {'BIC':12}  {bic1:>18.4f}  {bic2:>22.4f}")
+        print(f"  {'k (params)':12}  {k1:>18d}  {k2:>22d}")
+        print(f"  {'N obs':12}  {step1.get('n_obs', '?'):>18}  {step2.get('n_obs', '?'):>22}")
+
     print(f"  {'N subjects':12}  {len(step1['subjects']):>18}  {len(step2['subjects']):>22}")
     print()
 
@@ -371,47 +465,93 @@ def print_comparison(step1, step2, method="prelec"):
 # ENTRY POINT
 # ══════════════════════════════════════════════════════════════════════════════
 
-if __name__ == "__main__":
+def _run_one(method, c, y, lotteries, outdir, ts):
+    """Run the full two-step pipeline for a single method and cluster count."""
+    fixed_tau = not GlobalFixTau
+    tau_tag   = "freetau" if GlobalFixTau else "fixedtau"
+    tau_note  = ("all sessions, tau free (full EM)" if GlobalFixTau
+                 else "all sessions, tau fixed from Step 1")
 
-    METHOD   = GlobalMethod
-    C        = GlobalCluster
-    OUTDIR   = Path("em_outputs")
-    OUTDIR.mkdir(exist_ok=True)
-    TS       = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    y         = get_observed_ce(export_excel=False)
-    lotteries = f.transform(GlobalLottery)
+    valid      = y[y["lottery_id"].isin(lotteries.keys())]
+    n_obs_s1   = len(valid[valid["round_number"] <= 16])
+    n_obs_full = len(valid)
 
     t0 = time.time()
 
     # ── Step 1 ────────────────────────────────────────────────────────────────
-    step1 = run_step1(y, lotteries, method=METHOD, c=C, seeds=GlobalSeedsSet)
+    step1 = run_step1(y, lotteries, method=method, c=c, seeds=GlobalSeedsSet)
+    bic1, k1 = compute_bic(step1, n_obs_s1, fixed_tau=True)
+    step1["bic"] = bic1;  step1["k_params"] = k1;  step1["n_obs"] = n_obs_s1
     write_em_results(
         step1,
-        filepath=str(OUTDIR / f"two_step1_{METHOD}_C{C}_{TS}.txt")
+        filepath=str(outdir / f"two_step1_{method}_C{c}_{ts}.txt")
     )
 
     # ── Step 2 ────────────────────────────────────────────────────────────────
-    # GlobalFixTau=True  → clusters can shift   (fixed_tau=False)
-    # GlobalFixTau=False → clusters locked from Step 1 (fixed_tau=True)
-    fixed_tau   = not GlobalFixTau
-    tau_tag     = "freetau"  if GlobalFixTau else "fixedtau"
-    tau_note    = "all sessions, tau free (full EM)" if GlobalFixTau \
-                  else "all sessions, tau fixed from Step 1"
-
-    step2 = run_step2(step1, y, lotteries, method=METHOD, c=C,
+    step2 = run_step2(step1, y, lotteries, method=method, c=c,
                       fixed_tau=fixed_tau)
     step2["data_note"] = tau_note
+    bic2, k2 = compute_bic(step2, n_obs_full, fixed_tau=fixed_tau)
+    step2["bic"] = bic2;  step2["k_params"] = k2;  step2["n_obs"] = n_obs_full
     write_em_results(
         step2,
-        filepath=str(OUTDIR / f"two_step2_{tau_tag}_{METHOD}_C{C}_{TS}.txt")
+        filepath=str(outdir / f"two_step2_{tau_tag}_{method}_C{c}_{ts}.txt")
     )
 
     # ── Comparison ────────────────────────────────────────────────────────────
-    print_comparison(step1, step2, method=METHOD)
+    print_comparison(step1, step2, method=method)
 
     elapsed = time.time() - t0
     print(f"\n  Total time: {elapsed/60:.1f} min")
-    print(f"  GlobalFixTau = {GlobalFixTau}  →  {'clusters free' if GlobalFixTau else 'clusters locked'}")
-    print(f"  Step 1 → em_outputs/two_step1_{METHOD}_C{C}_{TS}.txt")
-    print(f"  Step 2 → em_outputs/two_step2_{tau_tag}_{METHOD}_C{C}_{TS}.txt")
+    print(f"  GlobalFixTau = {GlobalFixTau}  →  "
+          f"{'clusters free' if GlobalFixTau else 'clusters locked'}")
+    print(f"  Step 1 → {outdir}/two_step1_{method}_C{c}_{ts}.txt")
+    print(f"  Step 2 → {outdir}/two_step2_{tau_tag}_{method}_C{c}_{ts}.txt")
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Two-step EM estimation for reference-dependent preferences."
+    )
+    parser.add_argument(
+        "--method", "-m",
+        default=GlobalMethod,
+        choices=["prelec", "tk", "both"],
+        help=(
+            "Probability-weighting specification. "
+            "'both' runs prelec and tk sequentially. "
+            f"(default from GlobalSettings: {GlobalMethod!r})"
+        ),
+    )
+    parser.add_argument(
+        "--clusters", "-c",
+        type=int,
+        default=GlobalCluster,
+        help=f"Number of mixture clusters C. (default from GlobalSettings: {GlobalCluster})",
+    )
+
+    parser.add_argument(
+        "--lotteries", "-l",
+        type=int,
+        default=GlobalLottery,
+        help=f"Number of mixture clusters C. (default from GlobalSettings: {GlobalLottery})",
+    )
+    args = parser.parse_args()
+
+    OUTDIR = Path("em_outputs_3")
+    OUTDIR.mkdir(exist_ok=True)
+    TS = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    y         = get_observed_ce(export_excel=False)
+    lotteries = f.transform(GlobalLottery)
+
+    methods = ["prelec", "tk"] if args.method == "both" else [args.method]
+
+    for method in methods:
+        if len(methods) > 1:
+            print(f"\n{'#'*60}")
+            print(f"#  METHOD: {method.upper()}")
+            print(f"{'#'*60}")
+        _run_one(method, args.clusters, y, lotteries, OUTDIR, TS)

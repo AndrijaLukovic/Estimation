@@ -244,8 +244,12 @@ def _preprocess_rows(y, lotteries, subj_index):
     y_proc["_EL"] = y_proc["lottery_id"].map(
         {lid: f.expected_payoff(lotteries[lid]["outcomes"]) for lid in lotteries}
     )
-    s2 = y_proc["round_number"] == 15
-    s3 = y_proc["round_number"] >= 16
+    # Experimental sessions:
+    #   rounds 1-16 -> session 1 (t=0)
+    #   round  17  -> session 2 (t=1)
+    #   round  18  -> session 3 (t=2)
+    s2 = y_proc["round_number"] == 17
+    s3 = y_proc["round_number"] == 18
     y_proc["_t"]  = s2.astype(int) + 2 * s3.astype(int)  # 0=s1, 1=s2, 2=s3
     y_proc["_Z1"] = np.where(s2 | s3, _parse_col(y_proc["realized_period1_label"]), 0)
     y_proc["_Z2"] = np.where(s3,      _parse_col(y_proc["realized_period2_label"]), 0)
@@ -272,18 +276,18 @@ def compute_log_likelihoods(thetas, ksi, method=method, c=C, subjects=None, y=No
     Returns an (n, c) matrix where entry [i, j] is the total log-likelihood
     of subject i's observed CEs under cluster j's structural parameters.
 
-      Session 1 (round_number < 15):  t=0, Z_t = 0
+      Session 1 (round_number <= 16): t=0, Z_t = 0
         Only the forward-looking component is active:
         R_l = (1 - a1 - a2 - a3) * E[L_l]
 
-      Session 2 (round_number == 15): t=1, Z_t = Z_1
+      Session 2 (round_number == 17): t=1, Z_t = Z_1
         R_l = composite(a1, a2, a3,
                         R^SQ = 0,
                         R^A  = partial_adaptation([0, Z_1], delta),
                         R^LE = lagged_expectation([E[L_l]], delta),
                         R^FE = E[L_l])
 
-      Session 3 (round_number == 16): t=2, Z_t = Z_1 + Z_2
+      Session 3 (round_number == 18): t=2, Z_t = Z_1 + Z_2
         R_l = composite(a1, a2, a3,
                         R^SQ = 0,
                         R^A  = partial_adaptation([0, Z_1, Z_2], delta),
@@ -805,6 +809,10 @@ def write_em_results(result, filepath="em_results.txt"):
     lines.append(f"  Converged     : {result.get('converged', '?')}")
     lines.append(f"  Seed          : {result.get('seed', 'N/A')}")
     lines.append(f"  Log-Likelihood: {result['log_likelihood']:.6f}")
+    if "bic" in result:
+        lines.append(f"  BIC           : {result['bic']:.6f}")
+        lines.append(f"  Free params(k): {result['k_params']}")
+        lines.append(f"  N obs         : {result['n_obs']}")
     lines.append("")
 
     # ── Per-seed comparison (present when run via run_em_multistart) ─────────

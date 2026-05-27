@@ -107,11 +107,11 @@ def generate_pseudo_data_multisession(
     seed=42,
 ):
     """
-    Generate pseudo CE data for 3 sessions (round_numbers 1, 15, 16).
+    Generate pseudo CE data for 3 sessions (round_numbers 1, 17, 18).
 
     Session 1 (round_number=1):  Z_t=0, no realized labels.
-    Session 2 (round_number=15): Z_1 realized; realized_period1_label set.
-    Session 3 (round_number=16): Z_1+Z_2 realized; both labels set.
+    Session 2 (round_number=17): Z_1 realized; realized_period1_label set.
+    Session 3 (round_number=18): Z_1+Z_2 realized; both labels set.
 
     true_params must include:
         r, alpha, lamb,
@@ -224,7 +224,7 @@ def generate_pseudo_data_multisession(
                 "realized_period2_label": None,
             })
 
-            # ── Session 2 (round_number = 15) ─────────────────────────────────
+            # ── Session 2 (round_number = 17) ─────────────────────────────────
             # Session-1 payoff Z_1 is known; reference point updated accordingly.
             ce_s2 = _ce_for_session(
                 lid, lot,
@@ -233,13 +233,13 @@ def generate_pseudo_data_multisession(
             rows.append({
                 "participant_label":      subj,
                 "lottery_id":             lid,
-                "round_number":           15,
+                "round_number":           17,
                 "ce_observed":            round(ce_s2 + rng.normal(0, ksi * spread), 4),
                 "realized_period1_label": lbl1,
                 "realized_period2_label": None,
             })
 
-            # ── Session 3 (round_number = 16) ─────────────────────────────────
+            # ── Session 3 (round_number = 18) ─────────────────────────────────
             # Both Z_1 and Z_2 are known; reference point uses full two-session history.
             ce_s3 = _ce_for_session(
                 lid, lot,
@@ -249,7 +249,7 @@ def generate_pseudo_data_multisession(
             rows.append({
                 "participant_label":      subj,
                 "lottery_id":             lid,
-                "round_number":           16,
+                "round_number":           18,
                 "ce_observed":            round(ce_s3 + rng.normal(0, ksi * spread), 4),
                 "realized_period1_label": lbl1,
                 "realized_period2_label": lbl2,

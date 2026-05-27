@@ -1,5 +1,6 @@
 import pandas as pd
 import openpyxl
+from GlobalSettings import GlobalData
 
 to_drop = ["session_code", "participant_code", "lottery_stake", "num_failed_attempts", "failed_too_many_1", "failed_too_many_2", 
         "failed_too_many_3", "quiz1", "quiz2", "quiz3", "quiz4", "quiz5", "quiz6", "quiz7", "quiz8", "participant_time_started_utc", "session2_start",
@@ -24,7 +25,13 @@ def process(export_excel=False, excel_path="pilot.xlsx"):
     """
 # XG: i will updeate this function so that: (1) it returns the average of the selected and cutoff, (2) it returns the refined choice, if there is one.
     
-    data = pd.read_csv("pilotdata1.csv", sep=";", skipinitialspace=True)
+    data = pd.read_csv(
+        GlobalData,
+        sep=",",
+        skipinitialspace=True,
+        encoding="utf-8-sig",
+        low_memory=False,
+    )
     data.columns = data.columns.str.strip()
     for col in data.select_dtypes(include="object").columns:
         data[col] = data[col].str.strip()
@@ -39,7 +46,7 @@ def process(export_excel=False, excel_path="pilot.xlsx"):
     data = data[~data["participant_label"].isin(incomplete_subjects)]
 
     # Drop rows who report too complicated in the post experiment questionnaire.
-    to_drop_subjects = data[data["quiz6"] == "Very complicated"]["participant_label"].unique()
+    to_drop_subjects = data[data["quiz6"] == "Too complicated or extremely complicated"]["participant_label"].unique()
     data = data[~data["participant_label"].isin(to_drop_subjects)]
 
     # Drop participants who are too fast 
@@ -76,7 +83,9 @@ def process(export_excel=False, excel_path="pilot.xlsx"):
 
     data.drop(to_drop, inplace=True, axis=1, errors="ignore")
 
-    data_period1,  data_period2, data_period3 = data[data["round_number"] < 15], data[data["round_number"] == 15], data[data["round_number"] == 16]
+    data_period1 = data[data["round_number"] <= 16]
+    data_period2 = data[data["round_number"] == 17]
+    data_period3 = data[data["round_number"] == 18]
 
     # Keep exports optional so data processing works in environments without openpyxl.
     if export_excel:

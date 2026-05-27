@@ -371,7 +371,7 @@ def run_em_multistart(
     n = len(seeds)
 
     print(f"\nRunning {n} EM restarts in parallel  (C={c}  method={method!r}  tol={tol})")
-    print(f"  Seeds: {seeds}\n", flush=True)
+    #print(f"  Seeds: {seeds}\n", flush=True)
 
     with ProcessPoolExecutor(max_workers=n_workers) as executor:
         # Map future → seed so we can label results even when they finish out of order
