@@ -31,7 +31,8 @@ import functions as f
 import GlobalSettings
 from GlobalSettings import (
     GlobalMethod, GlobalLottery, GlobalCluster,
-    GlobalSeedsSet, GlobalTol, GlobalInterMax, GlobalFixTau
+    GlobalSeedsSet, GlobalTol, GlobalInterMax, GlobalFixTau,
+    GlobalTKBounds, GlobalPrelecBounds,
 )
 from EM_parallel import run_em_multistart
 from Mixture import (
@@ -79,7 +80,7 @@ def run_step1(y_full, lotteries, method=GlobalMethod, c=GlobalCluster,
 
     print(f"\n{'='*60}")
     print(f"  STEP 1  |  session 1 only  |  {len(y_s1)} obs")
-    print(f"  Fixed: a2=a3=delta=0  (only forward-looking + SQ components)")
+    print(f"  Fixed: a2=a3=delta=0  (only forward-looking + status quo)")
     print(f"  Free : {free_desc}  (a4 = 1 - a1)")
     print(f"{'='*60}")
 
@@ -128,38 +129,40 @@ def _make_step2_bounds(theta_a, method="prelec"):
         lam    = float(theta_a[_I_LAM])
         beta   = float(theta_a[_I_BETA])
         palpha = float(theta_a[_I_PALPHA])
+        d_lo, d_hi = GlobalPrelecBounds[_I_DELTA]
         return [
-            (r,      r     ),   # r      – fixed (= 0)
+            (r,      r     ),   # r      – fixed
             (alpha,  alpha ),   # alpha  – fixed from Step 1
             (lam,    lam   ),   # lambda – fixed from Step 1
             (beta,   beta  ),   # beta   – fixed (always 1)
             (palpha, palpha),   # palpha – fixed from Step 1
-            (0.0,    1.0   ),   # s1     – FREE → a1
-            (0.0,    1.0   ),   # s2     – FREE → a2
-            (0.0,    1.0   ),   # s3     – FREE → a3
-            (0.0,    1.0   ),   # delta  – FREE
+            (0.0,    1.0   ),   # s1 slot → f2: fraction of C → a2
+            (0.0,    1.0   ),   # s2 slot → f3: fraction of remaining C → a3
+            (0.0,    0.0   ),   # s3 slot → unused (a1 is residual, a4 pinned)
+            (d_lo,   d_hi  ),   # delta  – from GlobalPrelecBounds
         ]
     elif method == "tk":
         r     = float(theta_a[_TK_R])
         alpha = float(theta_a[_TK_ALPHA])
         lam   = float(theta_a[_TK_LAM])
         gamma = float(theta_a[_TK_GAMMA])
+        d_lo, d_hi = GlobalTKBounds[_TK_DELTA]
         return [
             (r,     r    ),   # r     – fixed (= 0)
             (alpha, alpha),   # alpha – fixed from Step 1
             (lam,   lam  ),   # lambda – fixed from Step 1
             (gamma, gamma),   # gamma – fixed from Step 1
-            (0.0,   1.0  ),   # s1    – FREE → a1
-            (0.0,   1.0  ),   # s2    – FREE → a2
-            (0.0,   1.0  ),   # s3    – FREE → a3
-            (0.0,   1.0  ),   # delta – FREE
+            (0.0,   1.0  ),   # s1 slot → f2: fraction of C → a2
+            (0.0,   1.0  ),   # s2 slot → f3: fraction of remaining C → a3
+            (0.0,   0.0  ),   # s3 slot → unused (a1 is residual, a4 pinned)
+            (d_lo,  d_hi ),   # delta – from GlobalTKBounds
         ]
     else:
         raise NotImplementedError(f"_make_step2_bounds: unsupported method {method!r}")
 
 
 def _a_to_s_theta(theta_a, method="prelec"):
-    """Convert an a-space theta vector to s-space (optimisation space)."""
+    """Convert an a-space theta vector to s-space (optimisation space). [stick breaking]"""
     th = np.array(theta_a, dtype=float)
     if method == "prelec":
         th[_I_S1], th[_I_S2], th[_I_S3] = _a_to_s(
@@ -186,37 +189,60 @@ def _s_to_a_theta(theta_s, method="prelec"):
     return th
 
 
+def _f_to_a_theta(theta_f, C, method):
+    """Convert step-2 f-space theta → interpretable a-space.
+
+    s1 slot = f2,  s2 slot = f3,  s3 slot = 0 (unused).
+      a2 = f2 * C
+      a3 = f3 * (1-f2) * C
+      a1 = (1-f2) * (1-f3) * C   [residual within non-forward budget C]
+      a4 = 1 - C                  [pinned from Step 1]
+    """
+    th = np.array(theta_f, dtype=float)
+    if method == "prelec":
+        i1, i2, i3 = _I_S1, _I_S2, _I_S3
+    else:  # tk
+        i1, i2, i3 = _TK_A1, _TK_A2, _TK_A3
+    f2 = float(th[i1])
+    f3 = float(th[i2])
+    th[i1] = (1.0 - f2) * (1.0 - f3) * C   # a1
+    th[i2] = f2 * C                           # a2
+    th[i3] = f3 * (1.0 - f2) * C             # a3
+    return th
+
+
 def _run_step2_em_once(args):
-    """Single step-2 EM run (one random initialisation of a2, a3, delta).
+    """Single step-2 EM run (one random initialisation of f2, f3, delta).
 
     Designed to be called directly or submitted to ProcessPoolExecutor.
     args = (seed, thetas_s1_s, pis, ksi, resp_fixed, y, lotteries, subjects,
-            method, c, per_cluster_bounds, max_iter, tol)
+            method, c, per_cluster_bounds, max_iter, tol, C_per_cluster)
+
+    C_per_cluster : list[float] of length c
+        Total non-forward budget per cluster from Step 1 (= step-1 a1 = 1-a4).
+        a4 = 1-C is held fixed; f2/f3 split C into a2, a3; a1 = residual.
 
     resp_fixed : (n, c) array or None
         If provided, cluster responsibilities are held fixed (no E-step).
-        This implements the strict two-step: cluster assignments from Step 1
-        are frozen; Step 2 only estimates a2, a3, delta conditional on them.
-        If None, a full EM is run and cluster assignments can drift.
     """
     (seed, thetas_s1_s, pis, ksi, resp_fixed, y, lotteries, subjects,
-     method, c, per_cluster_bounds, max_iter, tol) = args
+     method, c, per_cluster_bounds, max_iter, tol, C_per_cluster) = args
 
     np.random.seed(seed)
 
-    # Indices of the free reference-point params depend on method
+    # Indices depend on method
     if method == "prelec":
         i_a1, i_a2, i_a3, i_d = _I_S1, _I_S2, _I_S3, _I_DELTA
     else:  # tk
         i_a1, i_a2, i_a3, i_d = _TK_A1, _TK_A2, _TK_A3, _TK_DELTA
 
-    # Initialise free reference-point params randomly
+    # Initialise: randomise f2 (→a2 fraction of C) and f3 (→a3 fraction of rest)
     thetas = [np.array(th, dtype=float) for th in thetas_s1_s]
     for j in range(c):
-        thetas[j][i_a1] = np.random.uniform(0.0, 0.3)
-        thetas[j][i_a2] = np.random.uniform(0.0, 0.3)
-        thetas[j][i_a3] = np.random.uniform(0.0, 0.3)
-        thetas[j][i_d]  = np.random.uniform(0.0, 0.5)
+        thetas[j][i_a1] = np.random.uniform(0.0, 1.0)  # f2
+        thetas[j][i_a2] = np.random.uniform(0.0, 1.0)  # f3
+        thetas[j][i_a3] = 0.0                            # unused (s3 slot fixed at 0)
+        thetas[j][i_d]  = np.random.uniform(0.0, 1.0)
 
     y = y[y["lottery_id"].isin(lotteries.keys())].copy()
     spreads = {lid: lotteries[lid]["spread"] for lid in lotteries}
@@ -232,7 +258,8 @@ def _run_step2_em_once(args):
         # ── E-step (skipped when tau is fixed from Step 1) ────────────────────
         if resp_fixed is None:
             log_L     = compute_log_likelihoods(
-                thetas, ksi, method, c, subjects, y, lotteries
+                thetas, ksi, method, c, subjects, y, lotteries,
+                C_fixed_list=C_per_cluster
             )
             log_pi    = np.log(pis)
             log_joint = log_L + log_pi[np.newaxis, :]
@@ -242,7 +269,8 @@ def _run_step2_em_once(args):
         else:
             # Fixed tau: compute LL just for convergence tracking
             log_L  = compute_log_likelihoods(
-                thetas, ksi, method, c, subjects, y, lotteries
+                thetas, ksi, method, c, subjects, y, lotteries,
+                C_fixed_list=C_per_cluster
             )
             log_pi = np.log(pis)
             ll     = float(np.sum(
@@ -266,7 +294,8 @@ def _run_step2_em_once(args):
                 thetas_tmp    = list(thetas)
                 thetas_tmp[j] = params
                 ll_j = compute_log_likelihoods(
-                    thetas_tmp, ksi, method, c, subjects, y, lotteries
+                    thetas_tmp, ksi, method, c, subjects, y, lotteries,
+                    C_fixed_list=C_per_cluster
                 )[:, j]
                 return -float(np.dot(resp_j, ll_j))
 
@@ -274,13 +303,15 @@ def _run_step2_em_once(args):
             thetas[j] = res.x
 
         # ── M-step: ksi ───────────────────────────────────────────────────────
-        ksi = _ksi_mstep(resp, thetas, ksi, method, c, subjects, y, lotteries)
+        ksi = _ksi_mstep(resp, thetas, ksi, method, c, subjects, y, lotteries,
+                         C_fixed_list=C_per_cluster)
 
     n_iter    = iteration + 1
     converged = abs(ll - prev_ll) < tol
 
-    # Convert optimised s-space thetas to interpretable a-space
-    thetas_a = [_s_to_a_theta(th, method) for th in thetas]
+    # Convert f-space thetas to interpretable a-space
+    thetas_a = [_f_to_a_theta(th, C_per_cluster[j], method)
+                for j, th in enumerate(thetas)]
 
     return {
         "thetas": thetas_a, "pis": pis, "ksi": ksi,
@@ -308,34 +339,39 @@ def run_step2(step1_result, y_full, lotteries, method=GlobalMethod,
     pis         = step1_result["pis"].copy()
     ksi         = step1_result["ksi"].copy()
 
-    # Per-cluster bounds (pin step-1 params, free s1/s2/s3/delta)
+    # Per-cluster bounds (pin step-1 params, free f2/f3/delta)
     per_cluster_bounds = [
         _make_step2_bounds(step1_result["thetas"][j], method)
         for j in range(c)
     ]
 
+    # C per cluster = total non-forward budget from Step 1 (= step-1 "a1")
+    # In Step 1 a2=a3=0 were forced, so step-1 a1 = a1+a2+a3 in the full model.
     if method == "prelec":
         fixed_desc = "r, alpha, lambda, palpha"
-        i_a1_s1    = _I_S1
+        i_C        = _I_S1
         def _pref_str(th):
             return (f"alpha={th[_I_ALPHA]:.3f}  lambda={th[_I_LAM]:.3f}  "
                     f"palpha={th[_I_PALPHA]:.3f}")
     else:  # tk
         fixed_desc = "r, alpha, lambda, gamma"
-        i_a1_s1    = _TK_A1
+        i_C        = _TK_A1
         def _pref_str(th):
             return (f"alpha={th[_TK_ALPHA]:.3f}  lambda={th[_TK_LAM]:.3f}  "
                     f"gamma={th[_TK_GAMMA]:.3f}")
 
+    C_per_cluster = [float(step1_result["thetas"][j][i_C]) for j in range(c)]
+
     tau_mode = "FIXED tau from Step 1" if fixed_tau else "tau free (full EM)"
     print(f"\n{'='*60}")
     print(f"  STEP 2  |  all sessions  |  {len(seeds)} restarts  |  {tau_mode}")
-    print(f"  Fixed per cluster: {fixed_desc}  (from Step 1)")
-    print(f"  Free  per cluster: a1, a2, a3, delta")
+    print(f"  Fixed per cluster: {fixed_desc} + a4=1-C  (from Step 1)")
+    print(f"  Free  per cluster: f2→a2, f3→a3, delta  (a1 = C-a2-a3 residual)")
     print(f"{'='*60}")
     for j in range(c):
-        a1 = float(step1_result["thetas"][j][i_a1_s1])
-        print(f"  C{j+1}: {_pref_str(step1_result['thetas'][j])}  a1={a1:.3f}")
+        C_j = C_per_cluster[j]
+        print(f"  C{j+1}: {_pref_str(step1_result['thetas'][j])}"
+              f"  C(budget)={C_j:.3f}  a4(fixed)={1-C_j:.3f}")
 
     # Compute fixed responsibilities from Step 1 (using session-1-only data)
     # so the weights reflect preference-based cluster assignment
@@ -344,7 +380,7 @@ def run_step2(step1_result, y_full, lotteries, method=GlobalMethod,
     args_list = [
         (seed, thetas_s1_s, pis.copy(), ksi.copy(), resp_fixed,
          y_full, lotteries, subjects,
-         method, c, per_cluster_bounds, GlobalInterMax, GlobalTol)
+         method, c, per_cluster_bounds, GlobalInterMax, GlobalTol, C_per_cluster)
         for seed in seeds
     ]
 

@@ -19,7 +19,7 @@ def _export_excel_safely(data, data_period1, data_period2, data_period3, excel_p
         data_period3.to_excel(writer, sheet_name="period3", index=False)
 
 
-def process(export_excel=False, excel_path="pilot.xlsx"):
+def process(export_excel=False, excel_path=GlobalData):
     """
     Process raw pilot data and return cleaned data and period-specific subsets.
     """

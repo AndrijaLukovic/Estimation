@@ -401,6 +401,40 @@ def expected_payoff(lottery_outcomes):
     return total
 
 
+def conditional_el(lottery_outcomes, Z1, Z2, t):
+    """
+    Expected payoff of the sub-lottery remaining from session t onward,
+    conditional on the realised path.
+
+    t=0 : E[z1+z2+z3]               (unconditional, full lottery)
+    t=1 : E[z2+z3  | period-1 = Z1]
+    t=2 : E[z3     | period-1 = Z1, period-2 = Z2]
+
+    lottery_outcomes : 'outcomes' dict from transform(), entries {j: {p: [0,z1,z2,...]}}.
+    """
+    if t == 0:
+        return expected_payoff(lottery_outcomes)
+
+    matched_p, matched_r = [], []
+    for path in lottery_outcomes.values():
+        p      = next(iter(path.keys()))
+        stream = next(iter(path.values()))   # [0, z1, z2, ...]
+        if t == 1:
+            if len(stream) >= 2 and stream[1] == Z1:
+                matched_p.append(p)
+                matched_r.append(sum(stream[2:]))
+        elif t == 2:
+            if len(stream) >= 3 and stream[1] == Z1 and stream[2] == Z2:
+                matched_p.append(p)
+                matched_r.append(stream[3] if len(stream) > 3 else 0.0)
+
+    if not matched_p:
+        return expected_payoff(lottery_outcomes)   # fallback
+
+    denom = sum(matched_p)
+    return sum(pi / denom * ri for pi, ri in zip(matched_p, matched_r))
+
+
 def status_quo(Z_0=0.0):
     """R^SQ(t) = Z_0  (anchored to the value at the start of the sequence)."""
     return float(Z_0)

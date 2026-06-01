@@ -11,7 +11,7 @@ from scipy.special import logsumexp
 import functions as f
 from lotteries import lotteries_full, one, all_high_stake, all_low_stake
 from main import get_observed_ce
-from GlobalSettings import GlobalTKBounds, GlobalPrelecBounds, GlobalMethod, GlobalLottery, GlobalCluster, GlobalTol, GlobalInterMax, GlobalSeedsSet, GlobalKsiBounds
+from GlobalSettings import GlobalTKBounds, GlobalPrelecBounds, GlobalMethod, GlobalLottery, GlobalCluster, GlobalTol, GlobalInterMax, GlobalSeedsSet, GlobalKsiBounds, GlobalRSQMode
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed, wait, FIRST_COMPLETED
 
 
@@ -158,12 +158,21 @@ def _display_params(th, method):
     return "  ".join(f"{_MG}{n}{_RST}={v:.4f}" for n, v in zip(names, vals))
 
 
-def _compute_ce_th(params, method, EL_arr, t_arr, Z1_arr, Z2_arr,
-                   Zt_arr, lotteries, y):
+def _compute_ce_th(params, method, EL_arr, EL_fe_arr, EL_c1_arr,
+                   t_arr, Z1_arr, Z2_arr, Zt_arr, lotteries, y, C_fixed=None):
     """
     Compute theoretical CEs for all rows under one cluster's params.
     Extracted from _cluster_ll so it can be reused by the ksi M-step.
     Does NOT depend on ksi.  Returns array of shape (len(y),).
+
+    EL_arr    : unconditional E[L_0]  — full-lottery expected payoff
+    EL_fe_arr : E[L_t | realised path] — conditional forward-looking expectation
+    EL_c1_arr : E[L_1 | Z1]  — for R^LE at t=2 (0 for t=0,1 rows)
+
+    R^FE(t) = EL_fe_arr   (conditional on current branch)
+    R^LE(t=0) = 0
+    R^LE(t=1) = E[L_0]  = EL_arr        (what was expected before any realisation)
+    R^LE(t=2) = weighted(E[L_0], E[L_1|Z1], delta)
     """
     if method == "tk":
         r, alpha, lamb, gamma, s1, s2, s3, delta = params[:8]
@@ -174,16 +183,37 @@ def _compute_ce_th(params, method, EL_arr, t_arr, Z1_arr, Z2_arr,
     else:
         raise ValueError(f"Unknown method: {method!r}")
 
-    a1, a2, a3 = _s_to_a(s1, s2, s3)
-    a4 = 1.0 - a1 - a2 - a3
+    if C_fixed is not None:
+        # Constrained step-2 mode: s1/s2 slots encode within-budget fractions.
+        # f2 = fraction of C → a2;  f3 = fraction of remaining C → a3;
+        # a1 = (1-f2)*(1-f3)*C  (residual within C);  a4 = 1-C  (pinned from Step 1).
+        f2, f3 = s1, s2
+        a4 = 1.0 - C_fixed
+        a2 = f2 * C_fixed
+        a3 = f3 * (1.0 - f2) * C_fixed
+        a1 = C_fixed - a2 - a3   # explicit: residual of C after allocating a2, a3
+    else:
+        a1, a2, a3 = _s_to_a(s1, s2, s3)
+        a4 = 1.0 - a1 - a2 - a3
 
     RA  = np.zeros(len(y))
     m1  = t_arr == 1
     m2  = t_arr == 2
     RA[m1] = Z1_arr[m1] / (delta + 1.0)
     RA[m2] = (delta * Z1_arr[m2] + Z2_arr[m2]) / (delta**2 + delta + 1.0)
-    RLE = np.where(t_arr >= 1, EL_arr, 0.0)
-    R_l = a2 * RA + a3 * RLE + a4 * EL_arr
+
+    # R^LE: weighted average of past lottery expectations
+    #   t=0 → 0  (no past sessions)
+    #   t=1 → E[L_0]  (= unconditional EL, session-1 lottery)
+    #   t=2 → (δ·E[L_0] + E[L_1|Z1]) / (δ+1)
+    RLE = np.zeros(len(y))
+    RLE[m1] = EL_arr[m1]
+    RLE[m2] = (delta * EL_arr[m2] + EL_c1_arr[m2]) / (delta + 1.0)
+
+    # R^SQ: GlobalRSQMode="zt"   → Z_t (accumulated realized payoffs; 0/Z1/Z1+Z2)
+    #        GlobalRSQMode="zero" → 0  (original; a1 only shrinks forward-looking weight)
+    RSQ = Zt_arr if GlobalRSQMode == "zt" else np.zeros(len(y))
+    R_l = a1 * RSQ + a2 * RA + a3 * RLE + a4 * EL_fe_arr
 
     ce_th_base = np.empty(len(y))
     cache      = {}
@@ -200,11 +230,13 @@ def _compute_ce_th(params, method, EL_arr, t_arr, Z1_arr, Z2_arr,
     return ce_th_base - Zt_arr
 
 
-def _cluster_ll(j, params, method, n, EL_arr, t_arr, Z1_arr, Z2_arr,
-                Zt_arr, si_arr, sig_arr, obs_arr, lotteries, y):
+def _cluster_ll(j, params, method, n, EL_arr, EL_fe_arr, EL_c1_arr,
+                t_arr, Z1_arr, Z2_arr,
+                Zt_arr, si_arr, sig_arr, obs_arr, lotteries, y, C_fixed=None):
 
-        ce_th = _compute_ce_th(params, method, EL_arr, t_arr, Z1_arr, Z2_arr,
-                               Zt_arr, lotteries, y)
+        ce_th = _compute_ce_th(params, method, EL_arr, EL_fe_arr, EL_c1_arr,
+                               t_arr, Z1_arr, Z2_arr, Zt_arr, lotteries, y,
+                               C_fixed=C_fixed)
 
         # ── Accumulate log-likelihood per subject ─────────────────────────────
         log_pdf = norm.logpdf(obs_arr, loc=ce_th, scale=sig_arr)
@@ -223,7 +255,9 @@ def _preprocess_rows(y, lotteries, subj_index):
     Returns
     -------
     y_proc      : filtered + annotated DataFrame
-    EL_arr      : expected payoff per row          (float64)
+    EL_arr      : unconditional E[L_0] per row     (float64)  — full-lottery EL
+    EL_fe_arr   : E[L_t | realised path] per row   (float64)  — forward-looking
+    EL_c1_arr   : E[L_1 | Z1] per row              (float64)  — for R^LE at t=2
     t_arr       : session index 0/1/2 per row      (float64)
     Z1_arr      : realised period-1 payoff per row (float64)
     Z2_arr      : realised period-2 payoff per row (float64)
@@ -237,7 +271,10 @@ def _preprocess_rows(y, lotteries, subj_index):
             col.str.replace("£", "", regex=False), errors="coerce"
         ).fillna(0).astype(int)
 
-    y_proc = y[y["lottery_id"].isin(lotteries.keys())].copy().reset_index(drop=True)
+    y_proc = (y[y["lottery_id"].isin(lotteries.keys())]
+              .dropna(subset=["ce_observed"])
+              .copy()
+              .reset_index(drop=True))
     y_proc["spread"] = y_proc["lottery_id"].map(
         {lid: lotteries[lid]["spread"] for lid in lotteries}
     )
@@ -259,7 +296,41 @@ def _preprocess_rows(y, lotteries, subj_index):
         y_proc["lottery_id"], y_proc["_t"], y_proc["_Z1"], y_proc["_Z2"]
     ))
 
+    # ── Conditional EL for correct R^FE and R^LE ─────────────────────────────
+    # Per unique (lid, t, Z1, Z2) key — same cache structure as _ckey.
+    #
+    # _EL_fe  : E[L_t | path] = forward-looking expectation at session t
+    #             t=0 → unconditional EL
+    #             t=1 → E[z2+z3 | Z1]
+    #             t=2 → E[z3    | Z1, Z2]
+    #
+    # _EL_c1  : E[L_1 | Z1]  (needed for R^LE at t=2; 0 elsewhere)
+    #             t=2 → E[z2+z3 | Z1]   (what was expected entering session 2)
+    el_fe_cache = {}   # (lid, t, Z1, Z2) → E[L_t | path]
+    el_c1_cache = {}   # (lid, Z1)        → E[L_1 | Z1]
+
+    for key in y_proc["_ckey"].unique():
+        lid, t_val, z1, z2 = key
+        outcomes = lotteries[lid]["outcomes"]
+        el_fe_cache[key] = f.conditional_el(outcomes, int(z1), int(z2), int(t_val))
+        if int(t_val) == 2:
+            c1_key = (lid, z1)
+            if c1_key not in el_c1_cache:
+                el_c1_cache[c1_key] = f.conditional_el(outcomes, int(z1), 0, 1)
+
+    y_proc["_EL_fe"] = y_proc["_ckey"].map(el_fe_cache)
+    # EL_c1 is only used for R^LE at t=2; keep 0 for t=0 and t=1 rows.
+    y_proc["_EL_c1"] = 0.0
+    mask_t2 = y_proc["_t"] == 2
+    y_proc.loc[mask_t2, "_EL_c1"] = (
+        y_proc.loc[mask_t2]
+        .apply(lambda row: el_c1_cache.get((row["lottery_id"], row["_Z1"]), 0.0), axis=1)
+        .values
+    )
+
     EL_arr     = y_proc["_EL"].values.astype(float)
+    EL_fe_arr  = y_proc["_EL_fe"].values.astype(float)
+    EL_c1_arr  = y_proc["_EL_c1"].values.astype(float)
     t_arr      = y_proc["_t"].values.astype(float)
     Z1_arr     = y_proc["_Z1"].values.astype(float)
     Z2_arr     = y_proc["_Z2"].values.astype(float)
@@ -268,10 +339,11 @@ def _preprocess_rows(y, lotteries, subj_index):
     spread_arr = y_proc["spread"].values.astype(float)
     obs_arr    = y_proc["ce_observed"].values.astype(float)
 
-    return y_proc, EL_arr, t_arr, Z1_arr, Z2_arr, Zt_arr, si_arr, spread_arr, obs_arr
+    return (y_proc, EL_arr, EL_fe_arr, EL_c1_arr,
+            t_arr, Z1_arr, Z2_arr, Zt_arr, si_arr, spread_arr, obs_arr)
 
 
-def compute_log_likelihoods(thetas, ksi, method=method, c=C, subjects=None, y=None, lotteries=None):
+def compute_log_likelihoods(thetas, ksi, method=method, c=C, subjects=None, y=None, lotteries=None, C_fixed_list=None):
     """
     Returns an (n, c) matrix where entry [i, j] is the total log-likelihood
     of subject i's observed CEs under cluster j's structural parameters.
@@ -283,16 +355,16 @@ def compute_log_likelihoods(thetas, ksi, method=method, c=C, subjects=None, y=No
       Session 2 (round_number == 17): t=1, Z_t = Z_1
         R_l = composite(a1, a2, a3,
                         R^SQ = 0,
-                        R^A  = partial_adaptation([0, Z_1], delta),
-                        R^LE = lagged_expectation([E[L_l]], delta),
-                        R^FE = E[L_l])
+                        R^A  = Z_1 / (delta+1),
+                        R^LE = E[L_0]  (unconditional full-lottery EL),
+                        R^FE = E[L_1 | Z_1]  (conditional remaining sub-lottery))
 
       Session 3 (round_number == 18): t=2, Z_t = Z_1 + Z_2
         R_l = composite(a1, a2, a3,
                         R^SQ = 0,
-                        R^A  = partial_adaptation([0, Z_1, Z_2], delta),
-                        R^LE = lagged_expectation([E[L_l], E[L_l]], delta),
-                        R^FE = E[L_l])
+                        R^A  = (delta*Z_1 + Z_2) / (delta^2+delta+1),
+                        R^LE = (delta*E[L_0] + E[L_1|Z_1]) / (delta+1),
+                        R^FE = E[L_2 | Z_1, Z_2]  (conditional remaining sub-lottery))
                                           
     Parameter vector per cluster:
       TK:     [r, alpha, lamb, gamma, a1, a2, a3, delta]         (8 params)
@@ -312,8 +384,8 @@ def compute_log_likelihoods(thetas, ksi, method=method, c=C, subjects=None, y=No
     n = len(subjects)
     subj_index = {s: i for i, s in enumerate(subjects)}
 
-    y, EL_arr, t_arr, Z1_arr, Z2_arr, Zt_arr, si_arr, spread_arr, obs_arr = \
-        _preprocess_rows(y, lotteries, subj_index)
+    y, EL_arr, EL_fe_arr, EL_c1_arr, t_arr, Z1_arr, Z2_arr, Zt_arr, \
+        si_arr, spread_arr, obs_arr = _preprocess_rows(y, lotteries, subj_index)
 
     ksi_arr     = np.array([ksi[subj_index[s]] for s in y["participant_label"]])
     sig_arr     = ksi_arr * spread_arr
@@ -322,16 +394,22 @@ def compute_log_likelihoods(thetas, ksi, method=method, c=C, subjects=None, y=No
     log_L = np.zeros((n, c))
 
     import multiprocessing
-    fixed = (method, n, EL_arr, t_arr, Z1_arr, Z2_arr,
+    fixed = (method, n, EL_arr, EL_fe_arr, EL_c1_arr,
+             t_arr, Z1_arr, Z2_arr,
              Zt_arr, si_arr, sig_arr, obs_arr, lotteries, y)
     in_worker = multiprocessing.current_process().name != "MainProcess"
     if in_worker or c == 1:
         for j in range(c):
-            _, col = _cluster_ll(j, thetas[j], *fixed)
+            C_j = C_fixed_list[j] if C_fixed_list is not None else None
+            _, col = _cluster_ll(j, thetas[j], *fixed, C_fixed=C_j)
             log_L[:, j] = col
     else:
         with ThreadPoolExecutor(max_workers=c) as executor:
-            futures = [executor.submit(_cluster_ll, j, thetas[j], *fixed) for j in range(c)]
+            futures = [
+                executor.submit(_cluster_ll, j, thetas[j], *fixed,
+                                C_fixed=C_fixed_list[j] if C_fixed_list is not None else None)
+                for j in range(c)
+            ]
             for future in futures:
                 j, col = future.result()
                 log_L[:, j] = col
@@ -339,7 +417,7 @@ def compute_log_likelihoods(thetas, ksi, method=method, c=C, subjects=None, y=No
     return log_L
 
 
-def _ksi_mstep(resp, thetas, ksi, method, c, subjects, y, lotteries):
+def _ksi_mstep(resp, thetas, ksi, method, c, subjects, y, lotteries, C_fixed_list=None):
     """
     M-step for individual noise parameters ksi.
 
@@ -361,14 +439,15 @@ def _ksi_mstep(resp, thetas, ksi, method, c, subjects, y, lotteries):
     n = len(subjects)
     subj_index = {s: i for i, s in enumerate(subjects)}
 
-    y_proc, EL_arr, t_arr, Z1_arr, Z2_arr, Zt_arr, si_arr, spread_arr, obs_arr = \
-        _preprocess_rows(y, lotteries, subj_index)
+    y_proc, EL_arr, EL_fe_arr, EL_c1_arr, t_arr, Z1_arr, Z2_arr, Zt_arr, \
+        si_arr, spread_arr, obs_arr = _preprocess_rows(y, lotteries, subj_index)
 
     # ── Precompute ce_th for every cluster — ONE pass, no ksi needed ──────────
     # ce_th_all shape: (n_rows, c)
     ce_th_all = np.column_stack([
-        _compute_ce_th(thetas[j], method, EL_arr, t_arr, Z1_arr, Z2_arr,
-                       Zt_arr, lotteries, y_proc)
+        _compute_ce_th(thetas[j], method, EL_arr, EL_fe_arr, EL_c1_arr,
+                       t_arr, Z1_arr, Z2_arr, Zt_arr, lotteries, y_proc,
+                       C_fixed=C_fixed_list[j] if C_fixed_list is not None else None)
         for j in range(c)
     ])
 
