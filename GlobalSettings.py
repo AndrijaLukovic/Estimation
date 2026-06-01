@@ -54,4 +54,4 @@ GlobalFixTau = False
 # R^SQ definition for the composite reference point:
 #   "zt"   : R^SQ(t) = Z_t  (accumulated realized payoffs; a1 identified from sessions 2/3)
 #   "zero" : R^SQ(t) = 0    (original behaviour; a1 only shrinks the forward-looking weight)
-GlobalRSQMode = "zt"
+GlobalRSQMode = "zero"
