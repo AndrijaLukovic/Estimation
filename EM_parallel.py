@@ -178,15 +178,19 @@ def em_mixture_parallel(
 
     if thetas is None:
         if method == "tk":
-            base  = np.array([0.05, 0.88, 2.25, 0.65, 0.0, 0.0, 0.0, 1.0])
-            noise = np.array([0.01, 0.05, 0.10, 0.05, 0.05, 0.05, 0.05, 0.05])
-            lo    = np.array([1e-4, 0.5,  1.0,  0.2,  0.0,  0.0,  0.0,  0.0])
-            hi    = np.array([0.2,  1.5,  3.0,  1.0,  1.0,  1.0,  1.0,  1.0])
+            base  = np.array([0.05, 0.88, 0.88, 2.25, 0.65,
+                              0.0, 0.0, 0.0, 1.0])
+            noise = np.array([0.01, 0.05, 0.05, 0.10, 0.05,
+                              0.05, 0.05, 0.05, 0.05])
+            lo    = np.array([b[0] for b in GlobalTKBounds], dtype=float)
+            hi    = np.array([b[1] for b in GlobalTKBounds], dtype=float)
         else:
-            base  = np.array([0.05, 0.88, 2.25, 1.0, 0.65, 0.0, 0.0, 0.0, 1.0])
-            noise = np.array([0.01, 0.05, 0.10, 0.0, 0.05, 0.05, 0.05, 0.05, 0.05])
-            lo    = np.array([1e-4, 0.5,  1.0,  1.0, 0.1,  0.0,  0.0,  0.0, 0.0])
-            hi    = np.array([0.2,  1.5,  3.0,  1.0, 0.8,  1.0,  1.0,  1.0, 1.0])
+            base  = np.array([0.05, 0.88, 0.88, 2.25, 1.0, 0.65,
+                              0.0, 0.0, 0.0, 1.0])
+            noise = np.array([0.01, 0.05, 0.05, 0.10, 0.0, 0.05,
+                              0.05, 0.05, 0.05, 0.05])
+            lo    = np.array([b[0] for b in GlobalPrelecBounds], dtype=float)
+            hi    = np.array([b[1] for b in GlobalPrelecBounds], dtype=float)
         thetas = [
             np.clip(base + np.random.randn(len(base)) * noise, lo, hi)
             for _ in range(c)
@@ -297,8 +301,8 @@ def em_mixture_parallel(
 
     # ── Summary ───────────────────────────────────────────────────────────────
     param_names = {
-        "tk":     ["r", "α", "λ", "γ",  "a1", "a2", "a3", "δ"],
-        "prelec": ["r", "α", "λ", "β",  "pα", "a1", "a2", "a3", "δ"],
+        "tk":     ["r", "α+", "α-", "λ", "γ", "a1", "a2", "a3", "δ"],
+        "prelec": ["r", "α+", "α-", "λ", "β", "pα", "a1", "a2", "a3", "δ"],
     }[method]
 
     if verbose:
@@ -424,8 +428,8 @@ def run_em_multistart(
 
     # ── Winner's cluster parameters ────────────────────────────────────────────
     param_names = {
-        "tk":     ["r", "α", "λ", "γ",  "a1", "a2", "a3", "δ"],
-        "prelec": ["r", "α", "λ", "β",  "pα", "a1", "a2", "a3", "δ"],
+        "tk":     ["r", "α+", "α-", "λ", "γ", "a1", "a2", "a3", "δ"],
+        "prelec": ["r", "α+", "α-", "λ", "β", "pα", "a1", "a2", "a3", "δ"],
     }[method]
     print(f"\n  Best seed: {best_result['seed']}   LL = {best_ll:.4f}\n")
     print(f"  {'Cluster':<10} {'π':<8} " + "  ".join(f"{p:<8}" for p in param_names))
@@ -468,8 +472,10 @@ if __name__ == "__main__":
 
     print("\nFinal parameters:")
     param_names = {
-        "tk":     ["r", "alpha", "lamb", "gamma", "a1", "a2", "a3", "delta"],
-        "prelec": ["r", "alpha", "lamb", "beta",  "palpha", "a1", "a2", "a3", "delta"],
+        "tk":     ["r", "alpha_gain", "alpha_loss", "lamb", "gamma",
+                   "a1", "a2", "a3", "delta"],
+        "prelec": ["r", "alpha_gain", "alpha_loss", "lamb", "beta",
+                   "palpha", "a1", "a2", "a3", "delta"],
     }[method]
 
     for j in range(C):

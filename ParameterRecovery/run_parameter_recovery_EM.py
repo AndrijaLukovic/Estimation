@@ -25,7 +25,8 @@ from generate_pseudo_data import generate_pseudo_data_multisession
 # ── TRUE STRUCTURAL PARAMETERS ────────────────────────────────────────────────
 TRUE_PARAMS = {
     "r":      0.03,
-    "alpha":  0.88,
+    "alpha_gain": 0.88,
+    "alpha_loss": 0.88,
     "lamb":   2.25,
     "beta":   1.0,    # fixed at 1 for single-parameter Prelec (ignored by TK)
     "palpha": 0.65,
@@ -42,7 +43,8 @@ TRUE_PARAMS_LIST = [
     TRUE_PARAMS,
     {
         "r":      0.01,
-        "alpha":  0.65,
+        "alpha_gain": 0.65,
+        "alpha_loss": 0.80,
         "lamb":   2.72,
         "beta":   1.0,
         "palpha": 0.43,
@@ -76,8 +78,10 @@ ALL_SEEDS = GlobalSeedsSet
 
 def _param_names(method):
     if method == "tk":
-        return ["r", "alpha", "lamb", "gamma", "a1", "a2", "a3", "delta"]
-    return ["r", "alpha", "lamb", "beta", "palpha", "a1", "a2", "a3", "delta"]
+        return ["r", "alpha_gain", "alpha_loss", "lamb", "gamma",
+                "a1", "a2", "a3", "delta"]
+    return ["r", "alpha_gain", "alpha_loss", "lamb", "beta", "palpha",
+            "a1", "a2", "a3", "delta"]
 
 
 def _param_vec(params_dict, method):

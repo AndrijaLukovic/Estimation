@@ -36,8 +36,9 @@ METHOD      = GlobalMethod
 C           = GlobalCluster
 OUTPUT_FILE = "em_outputs/profile_lambda.txt"
 
-# Index of lambda in GlobalPrelecBounds: [r, alpha, lambda, beta, palpha, s1, s2, s3, delta]
-LAM_IDX = 2
+# Index of lambda in GlobalPrelecBounds:
+# [r, alpha_gain, alpha_loss, lambda, beta, palpha, s1, s2, s3, delta]
+LAM_IDX = 3
 # ──────────────────────────────────────────────────────────────────────────────
 
 

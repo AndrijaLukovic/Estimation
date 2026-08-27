@@ -4,14 +4,15 @@ Two-step EM estimation for reference-dependent preferences.
 Step 1  (session 1 only, a2=a3=delta=0 fixed)
     Data    : round_number <= 16
     Fixed   : r=0, a2=0, a3=0, delta=0
-    Estimated: alpha, lambda, palpha  (preference params)
-               a1                    (reference-point weight on status quo)
+    Estimated: alpha_gain, alpha_loss, lambda, palpha  (preference params)
+               a1                                (reference-point weight)
     Note    : In session 1, Z1=Z2=0 so a2·Z1=a3·Z2=0 identically;
               R_l = (1-a1)·EL, identifying a1 from cross-lottery CE variation.
 
 Step 2  (all sessions, preference params fixed)
     Data    : all sessions
-    Fixed   : r, alpha, lambda, palpha  (preference params from Step 1)
+    Fixed   : r, alpha_gain, alpha_loss, lambda, palpha
+              (preference params from Step 1)
     Estimated: a1, a2, a3, delta  (all reference-point weights, jointly)
     Identifies from: within-subject CE changes as Z1/Z2 vary across sessions
 
@@ -43,12 +44,14 @@ from main import get_observed_ce
 
 
 # ── Index constants ───────────────────────────────────────────────────────────
-# Prelec: [r, alpha, lambda, beta, palpha, s1, s2, s3, delta]
-_I_R, _I_ALPHA, _I_LAM, _I_BETA, _I_PALPHA = 0, 1, 2, 3, 4
-_I_S1, _I_S2, _I_S3, _I_DELTA = 5, 6, 7, 8
-# TK:     [r, alpha, lambda, gamma, a1, a2, a3, delta]
-_TK_R, _TK_ALPHA, _TK_LAM, _TK_GAMMA = 0, 1, 2, 3
-_TK_A1, _TK_A2, _TK_A3, _TK_DELTA = 4, 5, 6, 7
+# Prelec: [r, alpha_gain, alpha_loss, lambda, beta, palpha,
+#          s1, s2, s3, delta]
+_I_R, _I_ALPHA_GAIN, _I_ALPHA_LOSS, _I_LAM = 0, 1, 2, 3
+_I_BETA, _I_PALPHA = 4, 5
+_I_S1, _I_S2, _I_S3, _I_DELTA = 6, 7, 8, 9
+# TK:     [r, alpha_gain, alpha_loss, lambda, gamma, a1, a2, a3, delta]
+_TK_R, _TK_ALPHA_GAIN, _TK_ALPHA_LOSS, _TK_LAM, _TK_GAMMA = 0, 1, 2, 3, 4
+_TK_A1, _TK_A2, _TK_A3, _TK_DELTA = 5, 6, 7, 8
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -70,11 +73,11 @@ def run_step1(y_full, lotteries, method=GlobalMethod, c=GlobalCluster,
     if method == "prelec":
         bounds_obj         = GlobalSettings.GlobalPrelecBounds
         i_a2, i_a3, i_d   = _I_S2, _I_S3, _I_DELTA
-        free_desc          = "alpha, lambda, palpha, a1"
+        free_desc          = "alpha_gain, alpha_loss, lambda, palpha, a1"
     elif method == "tk":
         bounds_obj         = GlobalSettings.GlobalTKBounds
         i_a2, i_a3, i_d   = _TK_A2, _TK_A3, _TK_DELTA
-        free_desc          = "alpha, lambda, gamma, a1"
+        free_desc          = "alpha_gain, alpha_loss, lambda, gamma, a1"
     else:
         raise NotImplementedError(f"run_step1: unsupported method {method!r}")
 
@@ -124,38 +127,42 @@ def _make_step2_bounds(theta_a, method="prelec"):
     preference parameters pinned and only (a1, a2, a3, delta) free.
     """
     if method == "prelec":
-        r      = float(theta_a[_I_R])
-        alpha  = float(theta_a[_I_ALPHA])
-        lam    = float(theta_a[_I_LAM])
-        beta   = float(theta_a[_I_BETA])
-        palpha = float(theta_a[_I_PALPHA])
+        r          = float(theta_a[_I_R])
+        alpha_gain = float(theta_a[_I_ALPHA_GAIN])
+        alpha_loss = float(theta_a[_I_ALPHA_LOSS])
+        lam        = float(theta_a[_I_LAM])
+        beta       = float(theta_a[_I_BETA])
+        palpha     = float(theta_a[_I_PALPHA])
         d_lo, d_hi = GlobalPrelecBounds[_I_DELTA]
         return [
-            (r,      r     ),   # r      – fixed
-            (alpha,  alpha ),   # alpha  – fixed from Step 1
-            (lam,    lam   ),   # lambda – fixed from Step 1
-            (beta,   beta  ),   # beta   – fixed (always 1)
-            (palpha, palpha),   # palpha – fixed from Step 1
-            (0.0,    1.0   ),   # s1 slot → f2: fraction of C → a2
-            (0.0,    1.0   ),   # s2 slot → f3: fraction of remaining C → a3
-            (0.0,    0.0   ),   # s3 slot → unused (a1 is residual, a4 pinned)
-            (d_lo,   d_hi  ),   # delta  – from GlobalPrelecBounds
+            (r,          r         ),   # r          – fixed
+            (alpha_gain, alpha_gain),   # alpha_gain – fixed from Step 1
+            (alpha_loss, alpha_loss),   # alpha_loss – fixed from Step 1
+            (lam,        lam       ),   # lambda     – fixed from Step 1
+            (beta,       beta      ),   # beta       – fixed (always 1)
+            (palpha,     palpha    ),   # palpha     – fixed from Step 1
+            (0.0,        1.0       ),   # s1 slot → f2: fraction of C → a2
+            (0.0,        1.0       ),   # s2 slot → f3: fraction of remaining C → a3
+            (0.0,        0.0       ),   # s3 slot → unused (a1 is residual)
+            (d_lo,       d_hi      ),   # delta      – from GlobalPrelecBounds
         ]
     elif method == "tk":
-        r     = float(theta_a[_TK_R])
-        alpha = float(theta_a[_TK_ALPHA])
-        lam   = float(theta_a[_TK_LAM])
-        gamma = float(theta_a[_TK_GAMMA])
+        r          = float(theta_a[_TK_R])
+        alpha_gain = float(theta_a[_TK_ALPHA_GAIN])
+        alpha_loss = float(theta_a[_TK_ALPHA_LOSS])
+        lam        = float(theta_a[_TK_LAM])
+        gamma      = float(theta_a[_TK_GAMMA])
         d_lo, d_hi = GlobalTKBounds[_TK_DELTA]
         return [
-            (r,     r    ),   # r     – fixed (= 0)
-            (alpha, alpha),   # alpha – fixed from Step 1
-            (lam,   lam  ),   # lambda – fixed from Step 1
-            (gamma, gamma),   # gamma – fixed from Step 1
-            (0.0,   1.0  ),   # s1 slot → f2: fraction of C → a2
-            (0.0,   1.0  ),   # s2 slot → f3: fraction of remaining C → a3
-            (0.0,   0.0  ),   # s3 slot → unused (a1 is residual, a4 pinned)
-            (d_lo,  d_hi ),   # delta – from GlobalTKBounds
+            (r,          r         ),   # r          – fixed
+            (alpha_gain, alpha_gain),   # alpha_gain – fixed from Step 1
+            (alpha_loss, alpha_loss),   # alpha_loss – fixed from Step 1
+            (lam,        lam       ),   # lambda     – fixed from Step 1
+            (gamma,      gamma     ),   # gamma      – fixed from Step 1
+            (0.0,        1.0       ),   # s1 slot → f2: fraction of C → a2
+            (0.0,        1.0       ),   # s2 slot → f3: fraction of remaining C → a3
+            (0.0,        0.0       ),   # s3 slot → unused (a1 is residual)
+            (d_lo,       d_hi      ),   # delta      – from GlobalTKBounds
         ]
     else:
         raise NotImplementedError(f"_make_step2_bounds: unsupported method {method!r}")
@@ -348,16 +355,20 @@ def run_step2(step1_result, y_full, lotteries, method=GlobalMethod,
     # C per cluster = total non-forward budget from Step 1 (= step-1 "a1")
     # In Step 1 a2=a3=0 were forced, so step-1 a1 = a1+a2+a3 in the full model.
     if method == "prelec":
-        fixed_desc = "r, alpha, lambda, palpha"
+        fixed_desc = "r, alpha_gain, alpha_loss, lambda, palpha"
         i_C        = _I_S1
         def _pref_str(th):
-            return (f"alpha={th[_I_ALPHA]:.3f}  lambda={th[_I_LAM]:.3f}  "
+            return (f"alpha_gain={th[_I_ALPHA_GAIN]:.3f}  "
+                    f"alpha_loss={th[_I_ALPHA_LOSS]:.3f}  "
+                    f"lambda={th[_I_LAM]:.3f}  "
                     f"palpha={th[_I_PALPHA]:.3f}")
     else:  # tk
-        fixed_desc = "r, alpha, lambda, gamma"
+        fixed_desc = "r, alpha_gain, alpha_loss, lambda, gamma"
         i_C        = _TK_A1
         def _pref_str(th):
-            return (f"alpha={th[_TK_ALPHA]:.3f}  lambda={th[_TK_LAM]:.3f}  "
+            return (f"alpha_gain={th[_TK_ALPHA_GAIN]:.3f}  "
+                    f"alpha_loss={th[_TK_ALPHA_LOSS]:.3f}  "
+                    f"lambda={th[_TK_LAM]:.3f}  "
                     f"gamma={th[_TK_GAMMA]:.3f}")
 
     C_per_cluster = [float(step1_result["thetas"][j][i_C]) for j in range(c)]
@@ -423,7 +434,7 @@ def count_free_params(result, fixed_tau=True):
     """
     Count free parameters for BIC.
 
-    Step 1: 3 preference params (alpha, lambda, palpha/gamma)
+    Step 1: 4 preference params (alpha_gain, alpha_loss, lambda, palpha/gamma)
             + 1 reference-point param (a1) per cluster
             + (c-1) mixing weights + one ksi per subject.
     Step 2: 4 reference-point params (a1, a2, a3, delta) per cluster
@@ -434,7 +445,7 @@ def count_free_params(result, fixed_tau=True):
     n_subjects = len(result["subjects"])
     step       = result.get("step", 2)
 
-    structural = 4 * c
+    structural = (5 if step == 1 else 4) * c
     if step == 1:
         mixing = c - 1
     else:
@@ -454,9 +465,9 @@ def compute_bic(result, n_obs, fixed_tau=True):
 def print_comparison(step1, step2, method="prelec"):
     """Side-by-side parameter table: step 1 vs step 2."""
     names = {
-        "prelec": ["r", "alpha", "lambda", "beta", "palpha",
+        "prelec": ["r", "alpha_gain", "alpha_loss", "lambda", "beta", "palpha",
                    "a1", "a2", "a3", "delta"],
-        "tk":     ["r", "alpha", "lambda", "gamma",
+        "tk":     ["r", "alpha_gain", "alpha_loss", "lambda", "gamma",
                    "a1", "a2", "a3", "delta"],
     }[method]
 
@@ -576,7 +587,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    OUTDIR = Path("em_outputs_3")
+    OUTDIR = Path("em_outputs_4")
     OUTDIR.mkdir(exist_ok=True)
     TS = datetime.now().strftime("%Y%m%d_%H%M%S")
 

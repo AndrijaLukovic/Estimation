@@ -40,40 +40,38 @@ def rho(t, r=0.97):
 
 
 
-# Power utility function with loss aversion, with respect to a reference point R
+# Power utility with domain-specific curvature around reference point R.
+# ``alpha`` is retained as the gain-domain exponent for backwards-compatible
+# calls; when alpha_loss is omitted the historical common-alpha model is used.
 
-def u(x, R=0, alpha=0.88, lamb=2.25):
+def u(x, R=0, alpha=0.88, lamb=2.25, alpha_loss=None):
+    alpha_loss = alpha if alpha_loss is None else alpha_loss
 
     if x >= R:
+        return (x - R) ** alpha
 
-        return (x - R) ** (alpha)
-
-    else:
-
-        return - lamb * ((-x + R) ** alpha) 
+    return -lamb * (R - x) ** alpha_loss
     
 
 
 # Inverse of the power utility function with loss aversion with respect to a reference point R
 
 
-def u_inv(y, R=0, alpha=0.88, lamb=2.25): 
+def u_inv(y, R=0, alpha=0.88, lamb=2.25, alpha_loss=None):
     """
-    The inverse of the power utility function with loss aversion with respect to a reference point R.
+    Inverse of the domain-specific power utility. ``alpha`` is alpha_gain.
     """
+    alpha_loss = alpha if alpha_loss is None else alpha_loss
 
     if y >= 0:
-        return y ** (1/(alpha)) + R
+        return y ** (1 / alpha) + R
 
-    if y < 0:
-
-        return -(-y/lamb) ** (1/alpha) + R
-    
+    return -(-y / lamb) ** (1 / alpha_loss) + R
 
 
 # Present value of an outcome stream, outcome stream is a list
 
-def PV(o, r=0.97, R=0, alpha=0.88, lamb=2.25):
+def PV(o, r=0.97, R=0, alpha=0.88, lamb=2.25, alpha_loss=None):
 
     s = 0
 
@@ -82,7 +80,7 @@ def PV(o, r=0.97, R=0, alpha=0.88, lamb=2.25):
         s = s + rho(i, r)*o[i]
 
 
-    return u(s, R, alpha, lamb)
+    return u(s, R, alpha, lamb, alpha_loss=alpha_loss)
 
 
 
@@ -271,7 +269,7 @@ def transform2(lotteries):
 
 def evaluation(
         r=0.97, R=0, alpha=0.88, lamb=2.25, gamma=0.61, lotteries=transform(lotteries_full),
-        beta=1, palpha=1, method="tk"
+        beta=1, palpha=1, method="tk", alpha_loss=None
         ):
     
     lotteries_v2 = {}
@@ -304,7 +302,7 @@ def evaluation(
 
             o = list(*path.values())
 
-            pv_outcome = PV(o, r, R, alpha, lamb)
+            pv_outcome = PV(o, r, R, alpha, lamb, alpha_loss=alpha_loss)
 
             b[j] = [p, pv_outcome]
 
@@ -347,27 +345,47 @@ def realized_zt( period1_label=None, period2_label=None):
 # Z_t is the cumulative discounted payoff already realised; defaults to 0 (session 1).
 # Formula: ce = v^{-1}(V(L_j)) - Z_t
 
-def ce(r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, desired=desired, lotteries=transform(lotteries_full), method="tk", beta=1, palpha=1, Z_t=0):
+def ce(r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, desired=desired,
+       lotteries=transform(lotteries_full), method="tk", beta=1, palpha=1,
+       Z_t=0, alpha_loss=None):
 
     # Pass through all parameters so CE is computed at the current candidate point.
-    evaluated_lotteries = evaluation(r=r, R=R, alpha=alpha, lamb=lamb, gamma=gamma, lotteries=lotteries, method=method, beta=beta, palpha=palpha)
+    evaluated_lotteries = evaluation(
+        r=r, R=R, alpha=alpha, alpha_loss=alpha_loss, lamb=lamb,
+        gamma=gamma, lotteries=lotteries, method=method, beta=beta,
+        palpha=palpha,
+    )
 
     l = evaluated_lotteries[desired]
 
     v = l["V"]
 
-    return u_inv(v, R, alpha, lamb) - Z_t
+    return u_inv(v, R, alpha, lamb, alpha_loss=alpha_loss) - Z_t
 
 
 
-def ce_dict(r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, lotteries=transform(lotteries_full), method="tk", beta=1, palpha=1):
+def ce_dict(r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0,
+            lotteries=transform(lotteries_full), method="tk", beta=1,
+            palpha=1, alpha_loss=None):
     """Return v^{-1}(V(L_j)) per lottery, without Z_t (base values for session 1)."""
-    evaluated_lotteries = evaluation(r=r, R=R, alpha=alpha, lamb=lamb, gamma=gamma, lotteries=lotteries, method=method, beta=beta, palpha=palpha)
+    evaluated_lotteries = evaluation(
+        r=r, R=R, alpha=alpha, alpha_loss=alpha_loss, lamb=lamb,
+        gamma=gamma, lotteries=lotteries, method=method, beta=beta,
+        palpha=palpha,
+    )
 
-    return {i: u_inv(evaluated_lotteries[i]["V"], R, alpha, lamb) for i in lotteries}
+    return {
+        i: u_inv(
+            evaluated_lotteries[i]["V"], R, alpha, lamb,
+            alpha_loss=alpha_loss,
+        )
+        for i in lotteries
+    }
 
 
-def ce_th_series(y, r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, lotteries=transform(lotteries_full), method="tk", beta=1, palpha=1):
+def ce_th_series(y, r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0,
+                 lotteries=transform(lotteries_full), method="tk", beta=1,
+                 palpha=1, alpha_loss=None):
     """
     Return a Series of theoretical CEs aligned with rows of y,
     with Z_t already subtracted per row.
@@ -375,7 +393,10 @@ def ce_th_series(y, r=0.97, gamma=0.61, alpha=0.88, lamb=2.25, R=0, lotteries=tr
     round == 17 : session 2, Z_t = period-1 payoff
     round == 18 : session 3, Z_t = period-1 + period-2 payoff
     """
-    base = ce_dict(r, gamma, alpha, lamb, R, lotteries=lotteries, method=method, beta=beta, palpha=palpha)
+    base = ce_dict(
+        r, gamma, alpha, lamb, R, lotteries=lotteries, method=method,
+        beta=beta, palpha=palpha, alpha_loss=alpha_loss,
+    )
     zt = y.apply(
         lambda row: realized_zt(
             period1_label=row["realized_period1_label"] if row["round_number"] in (17, 18) else None,

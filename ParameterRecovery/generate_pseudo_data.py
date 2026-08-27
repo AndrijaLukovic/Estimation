@@ -10,7 +10,7 @@ All observations are assigned round_number=1 (session 1, Z_t = 0).
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from GlobalSettings import GlobalMethod, GlobalLottery, GlobalCluster, GlobalStarts, GlobalTol
+from GlobalSettings import GlobalMethod, GlobalLottery
 import numpy as np
 import pandas as pd
 import functions as f
@@ -20,7 +20,8 @@ from lotteries import lotteries_full, test_lotteries, para_recov
 # ── TRUE STRUCTURAL PARAMETERS ────────────────────────────────────────────────
 TRUE_PARAMS = {
     "r":      0.03,
-    "alpha":  0.88,
+    "alpha_gain": 0.88,
+    "alpha_loss": 0.88,
     "lamb":   2.25,
     "gamma":  0.61,
     "beta":   1.0,
@@ -68,6 +69,8 @@ def generate_pseudo_data(
 
     rng = np.random.default_rng(seed)
     p   = true_params
+    alpha_gain = p.get("alpha_gain", p.get("alpha", 0.88))
+    alpha_loss = p.get("alpha_loss", alpha_gain)
 
     lotteries_t = f.transform(lottery)
     spreads     = {lid: lotteries_t[lid]["spread"] for lid in lotteries_t}
@@ -77,10 +80,15 @@ def generate_pseudo_data(
     for lid, lot in lotteries_t.items():
         EL_0 = f.expected_payoff(lot["outcomes"])
         R_l  = p["w"] * EL_0
-        ev   = f.evaluation(r=p["r"], R=R_l, alpha=p["alpha"], lamb=p["lamb"],
-                            gamma=p["gamma"], lotteries={lid: lot}, method=method,
-                            beta=p["beta"], palpha=p["palpha"])
-        base_ce[lid] = f.u_inv(ev[lid]["V"], R_l, p["alpha"], p["lamb"])
+        ev   = f.evaluation(
+            r=p["r"], R=R_l, alpha=alpha_gain, alpha_loss=alpha_loss,
+            lamb=p["lamb"], gamma=p["gamma"], lotteries={lid: lot},
+            method=method, beta=p["beta"], palpha=p["palpha"],
+        )
+        base_ce[lid] = f.u_inv(
+            ev[lid]["V"], R_l, alpha_gain, p["lamb"],
+            alpha_loss=alpha_loss,
+        )
 
     rows = []
     for subj, ksi in ksi_values.items():
@@ -114,7 +122,7 @@ def generate_pseudo_data_multisession(
     Session 3 (round_number=18): Z_1+Z_2 realized; both labels set.
 
     true_params must include:
-        r, alpha, lamb,
+        r, alpha_gain, alpha_loss, lamb,
         gamma (TK) OR beta/palpha (Prelec),
         a1, a2, a3, delta  — composite reference-point parameters.
 
@@ -135,6 +143,8 @@ def generate_pseudo_data_multisession(
 
     rng = np.random.default_rng(seed)
     p   = true_params
+    alpha_gain = p.get("alpha_gain", p.get("alpha", 0.88))
+    alpha_loss = p.get("alpha_loss", alpha_gain)
 
     # Reference-point decomposition parameters
     a1    = p.get("a1",    0.0)
@@ -180,12 +190,16 @@ def generate_pseudo_data_multisession(
         RFE = f.forward_looking(EL)
         R_l = f.composite(a1, a2, a3, RSQ, RA, RLE, RFE)
         ev  = f.evaluation(
-            r=p["r"], R=R_l, alpha=p["alpha"], lamb=p["lamb"],
+            r=p["r"], R=R_l, alpha=alpha_gain, alpha_loss=alpha_loss,
+            lamb=p["lamb"],
             gamma=p.get("gamma", 0.61),
             lotteries={lid: lot}, method=method,
             beta=p.get("beta", 1.0), palpha=p.get("palpha", 1.0),
         )
-        return f.u_inv(ev[lid]["V"], R_l, p["alpha"], p["lamb"]) - Z_t
+        return f.u_inv(
+            ev[lid]["V"], R_l, alpha_gain, p["lamb"],
+            alpha_loss=alpha_loss,
+        ) - Z_t
 
     rows = []
     for subj, ksi in ksi_values.items():

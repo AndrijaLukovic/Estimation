@@ -20,8 +20,10 @@ from main import get_observed_ce
 from Mixture import write_em_results, _s_to_a
 
 PARAM_NAMES = {
-    "tk":     ["r", "alpha", "lambda", "gamma", "a1", "a2", "a3", "delta"],
-    "prelec": ["r", "alpha", "lambda", "beta",  "palpha", "a1", "a2", "a3", "delta"],
+    "tk":     ["r", "alpha_gain", "alpha_loss", "lambda", "gamma",
+               "a1", "a2", "a3", "delta"],
+    "prelec": ["r", "alpha_gain", "alpha_loss", "lambda", "beta",
+               "palpha", "a1", "a2", "a3", "delta"],
 }
 
 

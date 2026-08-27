@@ -146,15 +146,15 @@ def _display_params(th, method):
     """Convert s-space params → interpretable a-space for verbose display."""
     th = np.array(th, dtype=float)
     if method == "tk":
-        a1, a2, a3 = _s_to_a(th[4], th[5], th[6])
-        a4 = 1.0 - a1 - a2 - a3
-        names = ["r",  "α",  "λ",  "γ",  "a1", "a2", "a3", "a4", "δ"]
-        vals  = [th[0], th[1], th[2], th[3], a1, a2, a3, a4, th[7]]
-    else:
         a1, a2, a3 = _s_to_a(th[5], th[6], th[7])
         a4 = 1.0 - a1 - a2 - a3
-        names = ["r",  "α",  "λ",  "β",  "pα", "a1", "a2", "a3", "a4", "δ"]
+        names = ["r", "α+", "α-", "λ", "γ", "a1", "a2", "a3", "a4", "δ"]
         vals  = [th[0], th[1], th[2], th[3], th[4], a1, a2, a3, a4, th[8]]
+    else:
+        a1, a2, a3 = _s_to_a(th[6], th[7], th[8])
+        a4 = 1.0 - a1 - a2 - a3
+        names = ["r", "α+", "α-", "λ", "β", "pα", "a1", "a2", "a3", "a4", "δ"]
+        vals  = [th[0], th[1], th[2], th[3], th[4], th[5], a1, a2, a3, a4, th[9]]
     return "  ".join(f"{_MG}{n}{_RST}={v:.4f}" for n, v in zip(names, vals))
 
 
@@ -175,10 +175,10 @@ def _compute_ce_th(params, method, EL_arr, EL_fe_arr, EL_c1_arr,
     R^LE(t=2) = weighted(E[L_0], E[L_1|Z1], delta)
     """
     if method == "tk":
-        r, alpha, lamb, gamma, s1, s2, s3, delta = params[:8]
+        r, alpha_gain, alpha_loss, lamb, gamma, s1, s2, s3, delta = params[:9]
         beta, palpha = 1, 1
     elif method == "prelec":
-        r, alpha, lamb, beta, palpha, s1, s2, s3, delta = params[:9]
+        r, alpha_gain, alpha_loss, lamb, beta, palpha, s1, s2, s3, delta = params[:10]
         gamma = 0.61
     else:
         raise ValueError(f"Unknown method: {method!r}")
@@ -221,10 +221,14 @@ def _compute_ce_th(params, method, EL_arr, EL_fe_arr, EL_c1_arr,
         if key not in cache:
             lid = key[0]
             rl  = float(R_l[idx[0]])
-            ev  = f.evaluation(r=r, R=rl, alpha=alpha, lamb=lamb,
+            ev  = f.evaluation(r=r, R=rl, alpha=alpha_gain,
+                               alpha_loss=alpha_loss, lamb=lamb,
                                gamma=gamma, lotteries={lid: lotteries[lid]},
                                method=method, beta=beta, palpha=palpha)
-            cache[key] = f.u_inv(ev[lid]["V"], rl, alpha, lamb)
+            cache[key] = f.u_inv(
+                ev[lid]["V"], rl, alpha_gain, lamb,
+                alpha_loss=alpha_loss,
+            )
         ce_th_base[idx] = cache[key]
 
     return ce_th_base - Zt_arr
@@ -367,8 +371,10 @@ def compute_log_likelihoods(thetas, ksi, method=method, c=C, subjects=None, y=No
                         R^FE = E[L_2 | Z_1, Z_2]  (conditional remaining sub-lottery))
                                           
     Parameter vector per cluster:
-      TK:     [r, alpha, lamb, gamma, a1, a2, a3, delta]         (8 params)
-      Prelec: [r, alpha, lamb, beta, palpha, a1, a2, a3, delta]  (9 params)
+      TK:     [r, alpha_gain, alpha_loss, lamb, gamma,
+               a1, a2, a3, delta]                                (9 params)
+      Prelec: [r, alpha_gain, alpha_loss, lamb, beta, palpha,
+               a1, a2, a3, delta]                               (10 params)
     """
 
     assert len(thetas) == c, \
@@ -672,29 +678,35 @@ def em_mixture(thetas=None, pis=None, ksi=None, subjects=None, method=method, c=
             # zero reference-point weights (a1=a2=a3=0 → pure forward-looking),
             # delta=1 (equal weighting of past observations).
             # Small random perturbation breaks symmetry between clusters.
-            # Parameter order: [r, alpha, lamb, gamma, a1, a2, a3, delta]
-            base_tk   = np.array([0.05, 0.88, 2.25, 0.65, 0.0, 0.0, 0.0, 1.0])
-            noise_tk  = np.array([0.01, 0.05, 0.10, 0.05, 0.05, 0.05, 0.05, 0.05])
-            lo_tk     = np.array([1e-4, 0.5,  1.0,  0.2,  0.0,  0.0,  0.0,  0.0])
-            hi_tk     = np.array([0.2,  1.5,  3.0,  1.0,  1.0,  1.0,  1.0,  1.0])
+            # Parameter order: [r, alpha_gain, alpha_loss, lamb, gamma,
+            #                   a1, a2, a3, delta]
+            base_tk   = np.array([0.05, 0.88, 0.88, 2.25, 0.65,
+                                  0.0, 0.0, 0.0, 1.0])
+            noise_tk  = np.array([0.01, 0.05, 0.05, 0.10, 0.05,
+                                  0.05, 0.05, 0.05, 0.05])
+            lo_tk     = np.array([b[0] for b in GlobalTKBounds], dtype=float)
+            hi_tk     = np.array([b[1] for b in GlobalTKBounds], dtype=float)
             def _init_tk():
-                th = np.clip(base_tk + np.random.randn(8) * noise_tk, lo_tk, hi_tk)
-                # Convert sampled a1,a2,a3 (indices 4,5,6) to s-space
-                th[4], th[5], th[6] = _a_to_s(th[4], th[5], th[6])
+                th = np.clip(base_tk + np.random.randn(9) * noise_tk, lo_tk, hi_tk)
+                # Convert sampled a1,a2,a3 (indices 5,6,7) to s-space
+                th[5], th[6], th[7] = _a_to_s(th[5], th[6], th[7])
                 return th
             thetas = [_init_tk() for _ in range(c)]
 
         elif method == "prelec":
-            # Parameter order: [r, alpha, lamb, beta, palpha, a1, a2, a3, delta]
+            # Parameter order: [r, alpha_gain, alpha_loss, lamb, beta, palpha,
+            #                   a1, a2, a3, delta]
             # beta is fixed to 1 (single-parameter Prelec); bounds enforce this.
-            base_p  = np.array([0.05, 0.88, 2.25, 1.0, 0.65, 0.0, 0.0, 0.0, 1.0])
-            noise_p = np.array([0.01, 0.05, 0.10, 0.0, 0.05, 0.05, 0.05, 0.05, 0.05])
-            lo_p    = np.array([1e-4, 0.5,  1.0,  1.0, 0.1,  0.0,  0.0,  0.0, 0.0])
-            hi_p    = np.array([0.2,  1.5,  3.0,  1.0, 0.8,  1.0,  1.0,  1.0, 1.0])
+            base_p  = np.array([0.05, 0.88, 0.88, 2.25, 1.0, 0.65,
+                                0.0, 0.0, 0.0, 1.0])
+            noise_p = np.array([0.01, 0.05, 0.05, 0.10, 0.0, 0.05,
+                                0.05, 0.05, 0.05, 0.05])
+            lo_p    = np.array([b[0] for b in GlobalPrelecBounds], dtype=float)
+            hi_p    = np.array([b[1] for b in GlobalPrelecBounds], dtype=float)
             def _init_p():
-                th = np.clip(base_p + np.random.randn(9) * noise_p, lo_p, hi_p)
-                # Convert sampled a1,a2,a3 (indices 5,6,7) to s-space
-                th[5], th[6], th[7] = _a_to_s(th[5], th[6], th[7])
+                th = np.clip(base_p + np.random.randn(10) * noise_p, lo_p, hi_p)
+                # Convert sampled a1,a2,a3 (indices 6,7,8) to s-space
+                th[6], th[7], th[8] = _a_to_s(th[6], th[7], th[8])
                 return th
             thetas = [_init_p() for _ in range(c)]
 
@@ -831,9 +843,9 @@ def em_mixture(thetas=None, pis=None, ksi=None, subjects=None, method=method, c=
 
     # Convert optimised s-params back to interpretable a-params
     if method == "tk":
-        i1, i2, i3 = 4, 5, 6
-    else:
         i1, i2, i3 = 5, 6, 7
+    else:
+        i1, i2, i3 = 6, 7, 8
     for j in range(c):
         th = np.array(thetas[j], dtype=float)
         th[i1], th[i2], th[i3] = _s_to_a(th[i1], th[i2], th[i3])
@@ -872,8 +884,10 @@ def write_em_results(result, filepath="em_results.txt"):
     n           = len(subjects)
 
     param_names = {
-        "tk":     ["r", "alpha", "lambda", "gamma", "a1", "a2", "a3", "delta"],
-        "prelec": ["r", "alpha", "lambda", "beta",  "palpha", "a1", "a2", "a3", "delta"],
+        "tk":     ["r", "alpha_gain", "alpha_loss", "lambda", "gamma",
+                   "a1", "a2", "a3", "delta"],
+        "prelec": ["r", "alpha_gain", "alpha_loss", "lambda", "beta",
+                   "palpha", "a1", "a2", "a3", "delta"],
     }[method_used]
 
     lines = []

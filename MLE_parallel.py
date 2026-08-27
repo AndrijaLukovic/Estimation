@@ -88,11 +88,10 @@ if __name__ == "__main__":
 
 
     # Write individual ksi values to txt file
-    ksi_offset = 5 if prob_weighter == "tk" else 6
+    ksi_offset = 6 if prob_weighter == "tk" else 7
     ksi_values = result.x[ksi_offset:]
     ksi_lines = [f"{subj}\t{ksi:.6f}" for subj, ksi in zip(subjects, ksi_values)]
     with open("ksi_estimates.txt", "w") as fh:
         fh.write("participant_label\tksi\n")
         fh.write("\n".join(ksi_lines) + "\n")
     print("Individual ksi estimates written to ksi_estimates.txt")
-    

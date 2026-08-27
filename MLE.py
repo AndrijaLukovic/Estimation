@@ -17,16 +17,17 @@ estimation_style = "single" #"mixture" or "single"
 
 cluster_number = 3
 
-# Structural parameter bounds — shared front (r, alpha, lamb, gamma/prelec) from GlobalSettings.
+# Structural parameter bounds — shared front
+# (r, alpha_gain, alpha_loss, lamb, gamma/prelec) from GlobalSettings.
 # MLE uses a single forward-looking weight w fixed to 0 instead of EM's (a1,a2,a3,delta).
 _w_bound = [(0, 0)]
 
 if estimation_style == "single":
-    bounds_tk     = list(GlobalTKBounds[:4])    + _w_bound
-    bounds_prelec = list(GlobalPrelecBounds[:5]) + _w_bound
+    bounds_tk     = list(GlobalTKBounds[:5]) + _w_bound
+    bounds_prelec = list(GlobalPrelecBounds[:6]) + _w_bound
 else:
-    bounds_tk     = list(GlobalTKBounds[:4])    + [(0, 0)] * cluster_number + _w_bound
-    bounds_prelec = list(GlobalPrelecBounds[:5]) + [(0, 0)] * cluster_number + _w_bound
+    bounds_tk     = list(GlobalTKBounds[:5]) + [(0, 0)] * cluster_number + _w_bound
+    bounds_prelec = list(GlobalPrelecBounds[:6]) + [(0, 0)] * cluster_number + _w_bound
 
 bounds = bounds_tk if prob_weighter == "tk" else bounds_prelec
 
@@ -49,8 +50,9 @@ def loglikelihood(params, y=None, lotteries=None, subjects=None, method=prob_wei
     Negative log-likelihood with individual error terms.
 
     Phase 1 (single session, Z_0=0):
-      TK:     params = [r, alpha, lamb, gamma, w,           ksi_1, ..., ksi_N]
-      Prelec: params = [r, alpha, lamb, beta, palpha, w,    ksi_1, ..., ksi_N]
+      TK:     params = [r, alpha_gain, alpha_loss, lamb, gamma, w, ksi_1, ...]
+      Prelec: params = [r, alpha_gain, alpha_loss, lamb, beta, palpha, w,
+                        ksi_1, ...]
 
     w is the forward-looking fraction: R_l = w * E[L_l].
     w=0 → no reference point; w=1 → full forward-looking reference point.
@@ -68,13 +70,13 @@ def loglikelihood(params, y=None, lotteries=None, subjects=None, method=prob_wei
         subjects = sorted(y["participant_label"].unique())
 
     if method == "tk":
-        r, alpha, lamb, gamma, w = params[:5]
+        r, alpha_gain, alpha_loss, lamb, gamma, w = params[:6]
         beta, palpha = 1, 1
-        ksi_offset = 5
-    elif method == "prelec":
-        r, alpha, lamb, beta, palpha, w = params[:6]
-        gamma = 0.61
         ksi_offset = 6
+    elif method == "prelec":
+        r, alpha_gain, alpha_loss, lamb, beta, palpha, w = params[:7]
+        gamma = 0.61
+        ksi_offset = 7
 
     ksi_map = {subj: params[ksi_offset + i] for i, subj in enumerate(subjects)}
 
@@ -83,9 +85,14 @@ def loglikelihood(params, y=None, lotteries=None, subjects=None, method=prob_wei
     for lid, lot in lotteries.items():
         EL_0 = f.expected_payoff(lot["outcomes"])
         R_l  = w * EL_0
-        ev   = f.evaluation(r=r, R=R_l, alpha=alpha, lamb=lamb, gamma=gamma,
-                            lotteries={lid: lot}, method=method, beta=beta, palpha=palpha)
-        ce_theoretical[lid] = f.u_inv(ev[lid]["V"], R_l, alpha, lamb)
+        ev   = f.evaluation(
+            r=r, R=R_l, alpha=alpha_gain, alpha_loss=alpha_loss,
+            lamb=lamb, gamma=gamma, lotteries={lid: lot}, method=method,
+            beta=beta, palpha=palpha,
+        )
+        ce_theoretical[lid] = f.u_inv(
+            ev[lid]["V"], R_l, alpha_gain, lamb, alpha_loss=alpha_loss,
+        )
 
     spreads = {lid: lotteries[lid]["spread"] for lid in lotteries}
     y = y[y["lottery_id"].isin(lotteries.keys())].copy()
@@ -134,8 +141,9 @@ def estimate_mle(n_starts=n_starts, param_bounds=bounds, y=None, lotteries=None)
     """
     Estimate parameters with multistart MLE and fail loudly if nothing converged.
 
-    TK:     full vector = [r, alpha, lamb, gamma, R,        ksi_1, ..., ksi_N]
-    Prelec: full vector = [r, alpha, lamb, beta, palpha, R, ksi_1, ..., ksi_N]
+    TK:     full vector = [r, alpha_gain, alpha_loss, lamb, gamma, R, ksi_1, ...]
+    Prelec: full vector = [r, alpha_gain, alpha_loss, lamb, beta, palpha, R,
+                           ksi_1, ...]
     Per-subject ksi bounds (1e-3, None) are appended to param_bounds dynamically
     based on the number of unique subjects in y.
     """
@@ -158,11 +166,12 @@ def estimate_mle(n_starts=n_starts, param_bounds=bounds, y=None, lotteries=None)
 
 def format_results(result, method=prob_weighter):
     if method == "tk":
-        param_names  = ["r", "Alpha", "Lambda", "Gamma", "w"]
-        n_structural = 5
-    else:  # prelec
-        param_names  = ["r", "Alpha", "Lambda", "Beta", "Prelec Alpha", "w"]
+        param_names  = ["r", "Alpha Gain", "Alpha Loss", "Lambda", "Gamma", "w"]
         n_structural = 6
+    else:  # prelec
+        param_names  = ["r", "Alpha Gain", "Alpha Loss", "Lambda", "Beta",
+                        "Prelec Alpha", "w"]
+        n_structural = 7
     return pd.DataFrame(
         {"Parameter": param_names, "Estimate": result.x[:n_structural]}
     )
@@ -181,7 +190,7 @@ if __name__ == "__main__":
     print(f"Estimated lottery choice data: {lottery}")
 
     # Write individual ksi values to txt file
-    ksi_offset = 5 if prob_weighter == "tk" else 6
+    ksi_offset = 6 if prob_weighter == "tk" else 7
     ksi_values = result.x[ksi_offset:]
     ksi_lines = [f"{subj}\t{ksi:.6f}" for subj, ksi in zip(subjects, ksi_values)]
     with open("ksi_estimates.txt", "w") as fh:

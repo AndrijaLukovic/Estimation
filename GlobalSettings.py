@@ -18,29 +18,29 @@ GlobalLotteryNoCaliMix = {k: v for k, v in lotteries.lotteries_v2.items()
 
 GlobalMethod = "prelec"
 #GlobalLottery = GlobalLotteryLowStake  
-GlobalLottery =  GlobalLotteryNoCaliMix #lotteries.lotteries_v2
+GlobalLottery =  lotteries.lotteries_v2
 
-GlobalCluster = 3
-GlobalTol = 1e-4
+GlobalCluster = 2
+GlobalTol = 1e-6
 GlobalInterMax = 1000
 GlobalData = "gamedata.csv"
 
 
 # Bounds for different methods
-# Parameter order: [r, alpha, lamb, gamma, a1, a2, a3, delta]
+# Parameter order: [r, alpha_gain, alpha_loss, lamb, gamma, a1, a2, a3, delta]
 GlobalTKBounds = [
-        (1e-6, 0.01), (0.5, 1.5), (0.99, 3.0), (0.2, 1.0),  
+        (1e-6, 1), (0.5, 1.5), (0.5, 1.5), (0.99, 3.0), (0.2, 1.0),
         (0, 1), (0.0, 1), (0.0, 1), (0.2, 1),
     ]
 
-# Parameter order: [r, alpha, lamb, beta, palpha, a1, a2, a3, delta]
+# Parameter order: [r, alpha_gain, alpha_loss, lamb, beta, palpha, a1, a2, a3, delta]
 GlobalPrelecBounds = [
-        (1e-6, 0.1), (0.5, 1.5), (0.99, 3.5), (1.0, 1.0), (0.4, 1),  
-        (0, 1), (0.0, 1), (0.0, 1), (0.0, 1),
+        (1e-6, 1), (1e-6, 2), (1e-6, 2), (1e-6, 6), (1.0, 1.0), (1e-6, 1),
+        (0, 1), (0.0, 1), (0.0, 1), (1, 1),
     ]
 
 
-GlobalNSeeds    = 1000
+GlobalNSeeds    = 100
 GlobalMasterSeed = 42
 GlobalSeedsSet  = np.random.default_rng(GlobalMasterSeed).integers(0, 10000, size=GlobalNSeeds).tolist()
 

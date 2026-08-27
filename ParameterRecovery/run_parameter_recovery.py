@@ -39,7 +39,9 @@ N_STARTS = 100            # multistart restarts for MLE
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Structural parameter bounds — only the probability weighting bounds differ
-_shared_front = [(1e-4, 0.2), (0.5, 1.5), (1, 3)]  # r, alpha, lamb
+_shared_front = [
+    (1e-4, 0.2), (0.5, 1.5), (0.5, 1.5), (1, 3),
+]  # r, alpha_gain, alpha_loss, lamb
 _w_bound      = [(0, 0)]                             # w: forward-looking fraction R_l = w*E[L_l] (Phase 1)
 _clsuter_range = [(0,0)]
 
@@ -95,8 +97,8 @@ def run_recovery(
 
 def _struct_names(method):
     if method == "tk":
-        return ["r", "alpha", "lamb", "gamma", "w"], 5
-    return ["r", "alpha", "lamb", "beta", "palpha", "w"], 6
+        return ["r", "alpha_gain", "alpha_loss", "lamb", "gamma", "w"], 6
+    return ["r", "alpha_gain", "alpha_loss", "lamb", "beta", "palpha", "w"], 7
 
 
 def collect_recovery_row(result, true_params, method=METHOD, seed=SEED):
