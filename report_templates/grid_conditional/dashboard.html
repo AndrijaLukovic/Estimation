@@ -1,0 +1,56 @@
+<header class="hero">
+  <div class="eyebrow">GRID EM · CONDITIONAL</div>
+  <h1>Grid EM Conditional 交互结果报告</h1>
+  <p>模型、起点、参数与诊断的独立交互报告。所有图表和详情均可离线使用。</p>
+  <div id="snapshot" class="muted"></div>
+</header>
+<main>
+  <div id="counts" class="cards"></div>
+  <section>
+    <div class="section-title"><h2>筛选与比较</h2><button id="reset">重置筛选</button></div>
+    <div class="filters">
+      <label>文件类型<select id="kind"><option value="model">模型结果</option><option value="restart">起点结果</option><option value="all">全部 pickle</option><option value="error">转换失败</option></select></label>
+      <label>测试<select id="test"><option value="">全部测试</option><option>test1</option><option>test2</option><option>test3</option></select></label>
+      <label>概率函数<select id="pw"><option value="">全部</option><option>prelec</option><option>tk</option></select></label>
+      <label>贴现<select id="discount"><option value="">全部</option><option value="exp">指数</option><option value="qh">准双曲</option></select></label>
+      <label>曲率<select id="curvature"><option value="">全部</option><option value="commonalpha">共同曲率</option><option value="sepalpha">分开曲率</option></select></label>
+      <label>记忆<select id="memory"><option value="">全部</option><option value="commem">共同记忆</option><option value="sepmem">分别记忆</option></select></label>
+      <label>类别数<select id="clusters"><option value="">全部</option><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
+      <label>诊断筛选<select id="quality"><option value="">全部</option><option value="prob">概率检查通过</option><option value="strict">通过且无近零 Prelec</option><option value="converged">达到 LL 容差</option><option value="warnings">存在警示</option><option value="noaudit">未完成复算</option></select></label>
+      <label class="wide">搜索模型、起点或文件路径<input id="search" type="search" placeholder="例如：test3、seed_4330、corrected"></label>
+      <label class="check"><input id="hide-alias" type="checkbox" checked>隐藏等价标签</label>
+    </div>
+    <p class="note">勾选最多 4 个文件可并排比较。ΔBIC 只以同测试、同协议与同样本的已保存模型为基准；ΔLL 以同配置已导出的最高 LL 为基准。筛选不会重新定义这些基准。</p>
+    <div class="chart-grid"><div id="ranking-chart"></div><div id="restart-chart"></div></div>
+    <div class="section-title"><div id="table-status"></div><button id="download-filtered">下载筛选结果 CSV</button></div>
+    <div class="table-wrap"><table id="file-table"></table></div>
+    <div class="pager"><button id="prev">上一页</button><span id="page-status"></span><button id="next">下一页</button></div>
+  </section>
+  <section id="comparison-section" hidden>
+    <div class="section-title"><h2>并排比较</h2><button id="clear-compare">清空</button></div>
+    <div id="compare-warning" class="notice"></div><div id="compare-table" class="table-wrap"></div>
+    <div id="compare-chart"></div>
+  </section>
+  <section id="reader-section" hidden>
+    <div class="section-title"><h2 id="reader-title">文件详情</h2><a id="open-detail" target="_blank" rel="noopener">独立打开详情页 ↗</a></div>
+    <iframe id="reader" title="pickle 完整结果详情" loading="lazy"></iframe>
+  </section>
+  <section>
+    <h2>诊断口径与完整性</h2>
+    <div id="integrity" class="notice"></div>
+    <div class="glossary">
+      <p><strong>起点：</strong>seed 是可复现的随机初始化；corrected 使用修正后结果的参数作为初始化；legacy 使用旧参数作为初始化。三者都在当前模型中重新估计，起点不是不同模型，也不增加类别数。</p>
+      <p><strong>LL / BIC：</strong>LL 越大拟合越好；BIC 越小越好，但比较须使用同样本、同估值协议。k 包含自由结构参数、C−1 个混合份额与每人一个 ξ。BIC 不是机制成立或人口比例的证明。</p>
+      <p><strong>收敛：</strong>converged 只说明 LL 变化达到容差。优化器非成功退出、被拒绝的 M 步、LL 下降、边界与起点差异需要分别检查；没有全局最优或梯度收敛证明。</p>
+      <p><strong>概率：</strong>检查全域单调性及实际条件彩票的负决策权重。近零 Prelec 属于额外形状警示，即使单调也可能几乎丢失中间概率信息。缺少复算时不标为“全部通过”。</p>
+      <p><strong>参考点与 λ：</strong>s1/s2/s3 是内部编码，真正的 SQ/PA/LE/FE 权重另行转换。π 是类别混合份额，两者不同。A(d)=λd^(α⁻−α⁺) 比较总幅度，M(d)=A(d)α⁻/α⁺ 比较边际敏感度。</p>
+      <p><strong>后验与 ξ：</strong>单类的后验 1 是模型约束；多类高后验也不验证真实类别。ξ 是个人误差比例，σ=ξ×原完整彩票 spread。拟合诊断使用本人全体 CE，属于样本内评价。</p>
+      <p><strong>未提供：</strong>标准误、置信区间、参数恢复与样本外验证没有保存在 pickle 中，报告不会据此编造统计推断。边界阈值和 1% 小类阈值仅是描述性警示。</p>
+    </div>
+    <details><summary>只有进度 JSON、尚无完整 pickle 的记录</summary><div id="progress-only"></div></details>
+    <details><summary>估计协议与代码／数据指纹</summary><pre id="protocol"></pre></details>
+    <p class="downloads"><a href="diagnostics.csv">所有文件诊断 CSV</a> · <a href="parameters.csv">全部参数 CSV</a> · <a href="catalog.json">报告目录 JSON</a> · <a href="manifest.json">文件 SHA256 与转换清单</a> · <a href="README.md">使用说明</a></p>
+    <p class="downloads"><a href="figures/model_bic_overview.svg">下载模型 BIC 图（SVG）</a> · <a href="figures/restart_ll_spread.svg">下载起点稳定性图（SVG）</a></p>
+  </section>
+</main>
+<div id="tooltip" role="status"></div><footer>独立报告快照。新增结果后重新运行导出脚本即可更新；输入 pickle 不会被修改。</footer>

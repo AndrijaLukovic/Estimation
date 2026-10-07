@@ -10,3 +10,7 @@ pilot.xlsx
 /__pycache__/
 *.pyc
 *.txt
+/results_grid/
+/reports
+/results_grid_conditional/
+/results_grid_conditional_100/

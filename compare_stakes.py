@@ -21,9 +21,9 @@ from Mixture import write_em_results, _s_to_a
 
 PARAM_NAMES = {
     "tk":     ["r", "alpha_gain", "alpha_loss", "lambda", "gamma",
-               "a1", "a2", "a3", "delta"],
+               "a1", "a2", "a3", "delta", "psi"],
     "prelec": ["r", "alpha_gain", "alpha_loss", "lambda", "beta",
-               "palpha", "a1", "a2", "a3", "delta"],
+               "palpha", "a1", "a2", "a3", "delta", "psi"],
 }
 
 

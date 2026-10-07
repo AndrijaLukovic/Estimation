@@ -1,0 +1,47 @@
+<header class="detail-hero"><div class="eyebrow">PICKLE · 完整详情</div><h1 id="detail-title"></h1><div id="detail-subtitle"></div></header>
+<main>
+  <div id="detail-cards" class="cards"></div>
+  <div id="detail-warning" class="notice"></div>
+  <nav class="tabs" id="detail-tabs">
+    <button data-tab="parameters" class="active">参数与经济含义</button><button data-tab="convergence">迭代与优化器</button>
+    <button data-tab="fit">拟合与条件状态</button><button data-tab="people">个人 ξ 与后验</button><button data-tab="raw">全部原始字段</button>
+  </nav>
+  <section data-panel="parameters">
+    <h2>类别参数与参考点</h2>
+    <div id="cluster-overview" class="table-wrap"></div><div id="parameter-table" class="table-wrap"></div>
+    <p class="note">内部编码：aSQ=s1，aPA=(1−s1)s2，aLE=(1−s1)(1−s2)s3，aFE=1−前三者之和。自由、固定、绑定及当前未使用的参数分别标记；固定值不计入自由参数边界警示。</p>
+    <div class="chart-grid"><div id="reference-chart"></div><div id="probability-chart"></div></div>
+    <div class="controls"><label>相对参考点的金额 £ <input id="amount" type="number" min="0.01" max="1000000" step="1" value="100"></label><input id="amount-range" type="range" min="-2" max="4" step="0.05" value="2"><span id="amount-live"></span></div>
+    <div id="amount-table" class="table-wrap"></div><div id="amount-chart"></div>
+    <p class="note">概率图展示累计概率函数 w(p)，不是各分支直接替代概率。A(d) 与 M(d) 均依赖金额、曲率和货币单位；λ&gt;1 不保证每个金额上都更损失敏感。</p>
+  </section>
+  <section data-panel="convergence" hidden>
+    <div class="section-title"><h2>LL 与混合份额的迭代记录</h2><label>显示<select id="iteration-window"><option value="all">全部迭代</option><option value="50">最后 50 轮</option><option value="20">最后 20 轮</option></select></label></div>
+    <div class="chart-grid"><div id="ll-chart"></div><div id="pi-chart"></div></div>
+    <p class="note">终值复算改变是最终 LL 减最后一次 E 步记录，不能把它当作最后一轮 EM 的改善量。迭代记录未保存完整 θ 轨迹；同一行的 LL、π 时点也可能不同。</p>
+    <div id="convergence-metrics" class="table-wrap"></div>
+    <details><summary>完整迭代日志</summary><div id="iteration-table" class="table-wrap"></div></details>
+    <div class="section-title"><h3>完整 M 步优化器日志</h3><label class="check"><input id="optimizer-only-bad" type="checkbox">只看非成功／拒绝／Q 增加</label></div>
+    <div id="optimizer-summary"></div><div id="optimizer-table" class="table-wrap"></div>
+    <div class="pager"><button id="optimizer-prev">上一页</button><span id="optimizer-page"></span><button id="optimizer-next">下一页</button></div>
+    <div id="restart-summaries" class="table-wrap"></div>
+  </section>
+  <section data-panel="fit" hidden>
+    <h2>共享估值公式复核</h2><div id="fit-status" class="notice"></div><div id="fit-metrics" class="table-wrap"></div>
+    <div class="chart-grid"><div id="fit-chart"></div><div id="fit-bias-chart"></div></div>
+    <div id="stage-table" class="table-wrap"></div>
+    <h3>每一个实际条件状态</h3><div id="state-table" class="table-wrap"></div>
+    <p class="note">CE 评价当前未实现支付：筛选路径、归一化条件概率、重新计时，不再扣除已实现支付。参考点沿用协议中的历史名义金额标杆，与剩余支付直接比较。拟合误差的方向为观测−拟合。</p>
+  </section>
+  <section data-panel="people" hidden>
+    <h2>每位参与者的 ξ 与后验概率</h2><div class="chart-grid"><div id="ksi-chart"></div><div id="posterior-chart"></div></div>
+    <p class="note">多类后验反映模型内部分类；单类后验恒为 1，不能当成分类准确率。下表保留全部参与者与所有类别后验，分页只影响显示。</p>
+    <div class="section-title"><input id="person-search" type="search" placeholder="搜索参与者标识"><button id="download-people">下载完整个人参数 CSV</button></div>
+    <div id="people-table" class="table-wrap"></div><div class="pager"><button id="people-prev">上一页</button><span id="people-page"></span><button id="people-next">下一页</button></div>
+  </section>
+  <section data-panel="raw" hidden>
+    <h2>所有原始 pickle 字段</h2><p>数组与日志完整保留，不截断。dataclass 展开为字段，非有限值以 Infinity／NaN 文本表示。</p>
+    <div class="controls"><label>选择字段<select id="raw-field"></select></label><button id="download-json">下载完整可读 JSON</button></div><pre id="raw-view"></pre>
+    <details><summary>模型元数据 meta.json</summary><pre id="meta-view"></pre></details>
+  </section>
+</main><div id="tooltip" role="status"></div><footer>可独立打开本页；保留报告 assets 目录即可使用交互功能。</footer>

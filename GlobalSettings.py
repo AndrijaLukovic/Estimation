@@ -27,16 +27,31 @@ GlobalData = "gamedata.csv"
 
 
 # Bounds for different methods
-# Parameter order: [r, alpha_gain, alpha_loss, lamb, gamma, a1, a2, a3, delta]
+# psi = quasi-hyperbolic present-bias on the within-lottery exponential discount
+# rate r: rho(t=0)=1, rho(t>=1) = psi * exp(-r*t).  psi=1 recovers plain
+# exponential discounting.  Estimated in Step 1 alongside r and fixed in Step 2,
+# same treatment as r itself.
+# Parameter order: [r, alpha_gain, alpha_loss, lamb, gamma, a1, a2, a3, delta, psi]
+# alpha_gain/alpha_loss/lamb bounds match GlobalPrelecBounds' (wider) range below:
+# curvature and loss aversion are properties of the utility function, unrelated
+# to the probability-weighting method, so TK and Prelec should search the same
+# range. (Was previously (0.5,1.5)/(0.5,1.5)/(0.99,3.0) here -- narrower than
+# Prelec's for no principled reason.)
 GlobalTKBounds = [
-        (1e-6, 1), (0.5, 1.5), (0.5, 1.5), (0.99, 3.0), (0.2, 1.0),
-        (0, 1), (0.0, 1), (0.0, 1), (0.2, 1),
+        (1e-6, 1), (1e-6, 5), (1e-6, 5), (1e-6, 6), (0.2, 1.0),
+        (0, 1), (0.0, 1), (0.0, 1), (0.2, 1), (1e-6, 1),
     ]
 
-# Parameter order: [r, alpha_gain, alpha_loss, lamb, beta, palpha, a1, a2, a3, delta]
+# Parameter order: [r, alpha_gain, alpha_loss, lamb, beta, palpha, a1, a2, a3, delta, psi]
+# delta bound matches GlobalTKBounds' (0.2, 1): memory decay is a property of the
+# reference-point mechanism, unrelated to the probability-weighting method, so
+# there is no reason for it to be free under TK but pinned under Prelec. (Was
+# previously (1, 1) here, which silently disabled memory-decay estimation for
+# every Prelec-method run -- Mixture.em_mixture, EM_parallel, two_step_em Step 2,
+# and fixed_refpoint_em all inherited this.)
 GlobalPrelecBounds = [
-        (1e-6, 1), (1e-6, 2), (1e-6, 2), (1e-6, 6), (1.0, 1.0), (1e-6, 1),
-        (0, 1), (0.0, 1), (0.0, 1), (1, 1),
+        (1e-6, 1), (1e-6, 5), (1e-6, 5), (1e-6, 6), (1.0, 1.0), (1e-6, 1),
+        (0, 1), (0.0, 1), (0.0, 1), (0.2, 1), (1e-6, 1),
     ]
 
 

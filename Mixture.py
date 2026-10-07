@@ -148,22 +148,27 @@ def _display_params(th, method):
     if method == "tk":
         a1, a2, a3 = _s_to_a(th[5], th[6], th[7])
         a4 = 1.0 - a1 - a2 - a3
-        names = ["r", "α+", "α-", "λ", "γ", "a1", "a2", "a3", "a4", "δ"]
-        vals  = [th[0], th[1], th[2], th[3], th[4], a1, a2, a3, a4, th[8]]
+        names = ["r", "α+", "α-", "λ", "γ", "a1", "a2", "a3", "a4", "δ", "ψ"]
+        vals  = [th[0], th[1], th[2], th[3], th[4], a1, a2, a3, a4, th[8], th[9]]
     else:
         a1, a2, a3 = _s_to_a(th[6], th[7], th[8])
         a4 = 1.0 - a1 - a2 - a3
-        names = ["r", "α+", "α-", "λ", "β", "pα", "a1", "a2", "a3", "a4", "δ"]
-        vals  = [th[0], th[1], th[2], th[3], th[4], th[5], a1, a2, a3, a4, th[9]]
+        names = ["r", "α+", "α-", "λ", "β", "pα", "a1", "a2", "a3", "a4", "δ", "ψ"]
+        vals  = [th[0], th[1], th[2], th[3], th[4], th[5], a1, a2, a3, a4, th[9], th[10]]
     return "  ".join(f"{_MG}{n}{_RST}={v:.4f}" for n, v in zip(names, vals))
 
 
 def _compute_ce_th(params, method, EL_arr, EL_fe_arr, EL_c1_arr,
-                   t_arr, Z1_arr, Z2_arr, Zt_arr, lotteries, y, C_fixed=None):
+                   t_arr, Z1_arr, Z2_arr, Zt_arr, lotteries, y, C_fixed=None,
+                   delta_le=None):
     """
     Compute theoretical CEs for all rows under one cluster's params.
     Extracted from _cluster_ll so it can be reused by the ksi M-step.
     Does NOT depend on ksi.  Returns array of shape (len(y),).
+
+    CE and reference points are expressed as current remaining-payoff amounts.
+    Historical SQ/PA/LE benchmark formulas are retained; FE is the conditional
+    remaining expectation. Future payment delays restart at the current stage.
 
     EL_arr    : unconditional E[L_0]  — full-lottery expected payoff
     EL_fe_arr : E[L_t | realised path] — conditional forward-looking expectation
@@ -173,12 +178,23 @@ def _compute_ce_th(params, method, EL_arr, EL_fe_arr, EL_c1_arr,
     R^LE(t=0) = 0
     R^LE(t=1) = E[L_0]  = EL_arr        (what was expected before any realisation)
     R^LE(t=2) = weighted(E[L_0], E[L_1|Z1], delta)
+
+    psi: quasi-hyperbolic present-bias on the within-lottery discount rate r
+    (rho(t=0)=1, rho(t>=1)=psi*exp(-r*t) — see functions.rho).  Estimated in
+    Step 1 alongside r and held fixed in Step 2, same as r itself.
+
+    delta_le : optional separate memory-decay parameter for R^LE (lagged
+    expectation).  When None (default, all existing call sites), R^LE reuses
+    `delta` from `params` — i.e. R^A and R^LE share one memory-decay
+    parameter, exactly the historical/common-memory-decay behaviour.  Passing
+    a value here decouples them: `delta` from `params` drives only R^A
+    (partial adaptation) and `delta_le` drives only R^LE.
     """
     if method == "tk":
-        r, alpha_gain, alpha_loss, lamb, gamma, s1, s2, s3, delta = params[:9]
+        r, alpha_gain, alpha_loss, lamb, gamma, s1, s2, s3, delta, psi = params[:10]
         beta, palpha = 1, 1
     elif method == "prelec":
-        r, alpha_gain, alpha_loss, lamb, beta, palpha, s1, s2, s3, delta = params[:10]
+        r, alpha_gain, alpha_loss, lamb, beta, palpha, s1, s2, s3, delta, psi = params[:11]
         gamma = 0.61
     else:
         raise ValueError(f"Unknown method: {method!r}")
@@ -205,10 +221,13 @@ def _compute_ce_th(params, method, EL_arr, EL_fe_arr, EL_c1_arr,
     # R^LE: weighted average of past lottery expectations
     #   t=0 → 0  (no past sessions)
     #   t=1 → E[L_0]  (= unconditional EL, session-1 lottery)
-    #   t=2 → (δ·E[L_0] + E[L_1|Z1]) / (δ+1)
+    #   t=2 → (δ_LE·E[L_0] + E[L_1|Z1]) / (δ_LE+1)
+    # Uses delta_le when supplied (separate-memory-decay models); otherwise
+    # falls back to the same `delta` used above for R^A (common decay).
+    d_le = delta if delta_le is None else float(delta_le)
     RLE = np.zeros(len(y))
     RLE[m1] = EL_arr[m1]
-    RLE[m2] = (delta * EL_arr[m2] + EL_c1_arr[m2]) / (delta + 1.0)
+    RLE[m2] = (d_le * EL_arr[m2] + EL_c1_arr[m2]) / (d_le + 1.0)
 
     # R^SQ: GlobalRSQMode="zt"   → Z_t (accumulated realized payoffs; 0/Z1/Z1+Z2)
     #        GlobalRSQMode="zero" → 0  (original; a1 only shrinks forward-looking weight)
@@ -217,30 +236,39 @@ def _compute_ce_th(params, method, EL_arr, EL_fe_arr, EL_c1_arr,
 
     ce_th_base = np.empty(len(y))
     cache      = {}
-    for key, idx in y.groupby("_ckey", sort=False).groups.items():
+    groups = y.attrs.get("_ce_state_groups")
+    if groups is None:
+        groups = [(key, np.asarray(idx), f.conditional_lottery(
+            lotteries[key[0]], key[1], key[2], key[3]))
+            for key, idx in y.groupby("_ckey", sort=False).groups.items()]
+    for key, idx, current_lottery in groups:
         if key not in cache:
             lid = key[0]
             rl  = float(R_l[idx[0]])
             ev  = f.evaluation(r=r, R=rl, alpha=alpha_gain,
                                alpha_loss=alpha_loss, lamb=lamb,
-                               gamma=gamma, lotteries={lid: lotteries[lid]},
-                               method=method, beta=beta, palpha=palpha)
+                               gamma=gamma, lotteries={lid: current_lottery},
+                               method=method, beta=beta, palpha=palpha, psi=psi)
             cache[key] = f.u_inv(
                 ev[lid]["V"], rl, alpha_gain, lamb,
                 alpha_loss=alpha_loss,
             )
         ce_th_base[idx] = cache[key]
 
-    return ce_th_base - Zt_arr
+    # Past payments have already been removed from the conditional streams.
+    # The inverse utility is a CE for the remaining lottery, so subtracting
+    # accumulated payments here would count their removal a second time.
+    return ce_th_base
 
 
 def _cluster_ll(j, params, method, n, EL_arr, EL_fe_arr, EL_c1_arr,
                 t_arr, Z1_arr, Z2_arr,
-                Zt_arr, si_arr, sig_arr, obs_arr, lotteries, y, C_fixed=None):
+                Zt_arr, si_arr, sig_arr, obs_arr, lotteries, y, C_fixed=None,
+                delta_le=None):
 
         ce_th = _compute_ce_th(params, method, EL_arr, EL_fe_arr, EL_c1_arr,
                                t_arr, Z1_arr, Z2_arr, Zt_arr, lotteries, y,
-                               C_fixed=C_fixed)
+                               C_fixed=C_fixed, delta_le=delta_le)
 
         # ── Accumulate log-likelihood per subject ─────────────────────────────
         log_pdf = norm.logpdf(obs_arr, loc=ce_th, scale=sig_arr)
@@ -343,11 +371,18 @@ def _preprocess_rows(y, lotteries, subj_index):
     spread_arr = y_proc["spread"].values.astype(float)
     obs_arr    = y_proc["ce_observed"].values.astype(float)
 
+    y_proc.attrs["_ce_state_groups"] = [
+        (key, np.asarray(idx), f.conditional_lottery(
+            lotteries[key[0]], key[1], key[2], key[3]))
+        for key, idx in y_proc.groupby("_ckey", sort=False).groups.items()
+    ]
+
     return (y_proc, EL_arr, EL_fe_arr, EL_c1_arr,
             t_arr, Z1_arr, Z2_arr, Zt_arr, si_arr, spread_arr, obs_arr)
 
 
-def compute_log_likelihoods(thetas, ksi, method=method, c=C, subjects=None, y=None, lotteries=None, C_fixed_list=None):
+def compute_log_likelihoods(thetas, ksi, method=method, c=C, subjects=None, y=None, lotteries=None, C_fixed_list=None,
+                             delta_le_list=None):
     """
     Returns an (n, c) matrix where entry [i, j] is the total log-likelihood
     of subject i's observed CEs under cluster j's structural parameters.
@@ -369,12 +404,17 @@ def compute_log_likelihoods(thetas, ksi, method=method, c=C, subjects=None, y=No
                         R^A  = (delta*Z_1 + Z_2) / (delta^2+delta+1),
                         R^LE = (delta*E[L_0] + E[L_1|Z_1]) / (delta+1),
                         R^FE = E[L_2 | Z_1, Z_2]  (conditional remaining sub-lottery))
-                                          
+
+      psi: quasi-hyperbolic present-bias applied to r's within-lottery
+      discounting of a single outcome stream (see functions.rho/PV) — a
+      separate mechanism from the delta-weighted composite reference point
+      above.  Estimated in Step 1 alongside r; fixed in Step 2.
+
     Parameter vector per cluster:
       TK:     [r, alpha_gain, alpha_loss, lamb, gamma,
-               a1, a2, a3, delta]                                (9 params)
+               a1, a2, a3, delta, psi]                           (10 params)
       Prelec: [r, alpha_gain, alpha_loss, lamb, beta, palpha,
-               a1, a2, a3, delta]                               (10 params)
+               a1, a2, a3, delta, psi]                           (11 params)
     """
 
     assert len(thetas) == c, \
@@ -407,13 +447,15 @@ def compute_log_likelihoods(thetas, ksi, method=method, c=C, subjects=None, y=No
     if in_worker or c == 1:
         for j in range(c):
             C_j = C_fixed_list[j] if C_fixed_list is not None else None
-            _, col = _cluster_ll(j, thetas[j], *fixed, C_fixed=C_j)
+            d_le_j = delta_le_list[j] if delta_le_list is not None else None
+            _, col = _cluster_ll(j, thetas[j], *fixed, C_fixed=C_j, delta_le=d_le_j)
             log_L[:, j] = col
     else:
         with ThreadPoolExecutor(max_workers=c) as executor:
             futures = [
                 executor.submit(_cluster_ll, j, thetas[j], *fixed,
-                                C_fixed=C_fixed_list[j] if C_fixed_list is not None else None)
+                                C_fixed=C_fixed_list[j] if C_fixed_list is not None else None,
+                                delta_le=delta_le_list[j] if delta_le_list is not None else None)
                 for j in range(c)
             ]
             for future in futures:
@@ -423,7 +465,8 @@ def compute_log_likelihoods(thetas, ksi, method=method, c=C, subjects=None, y=No
     return log_L
 
 
-def _ksi_mstep(resp, thetas, ksi, method, c, subjects, y, lotteries, C_fixed_list=None):
+def _ksi_mstep(resp, thetas, ksi, method, c, subjects, y, lotteries, C_fixed_list=None,
+               delta_le_list=None):
     """
     M-step for individual noise parameters ksi.
 
@@ -453,7 +496,8 @@ def _ksi_mstep(resp, thetas, ksi, method, c, subjects, y, lotteries, C_fixed_lis
     ce_th_all = np.column_stack([
         _compute_ce_th(thetas[j], method, EL_arr, EL_fe_arr, EL_c1_arr,
                        t_arr, Z1_arr, Z2_arr, Zt_arr, lotteries, y_proc,
-                       C_fixed=C_fixed_list[j] if C_fixed_list is not None else None)
+                       C_fixed=C_fixed_list[j] if C_fixed_list is not None else None,
+                       delta_le=delta_le_list[j] if delta_le_list is not None else None)
         for j in range(c)
     ])
 
@@ -679,15 +723,15 @@ def em_mixture(thetas=None, pis=None, ksi=None, subjects=None, method=method, c=
             # delta=1 (equal weighting of past observations).
             # Small random perturbation breaks symmetry between clusters.
             # Parameter order: [r, alpha_gain, alpha_loss, lamb, gamma,
-            #                   a1, a2, a3, delta]
+            #                   a1, a2, a3, delta, psi]
             base_tk   = np.array([0.05, 0.88, 0.88, 2.25, 0.65,
-                                  0.0, 0.0, 0.0, 1.0])
+                                  0.0, 0.0, 0.0, 1.0, 1.0])
             noise_tk  = np.array([0.01, 0.05, 0.05, 0.10, 0.05,
-                                  0.05, 0.05, 0.05, 0.05])
+                                  0.05, 0.05, 0.05, 0.05, 0.05])
             lo_tk     = np.array([b[0] for b in GlobalTKBounds], dtype=float)
             hi_tk     = np.array([b[1] for b in GlobalTKBounds], dtype=float)
             def _init_tk():
-                th = np.clip(base_tk + np.random.randn(9) * noise_tk, lo_tk, hi_tk)
+                th = np.clip(base_tk + np.random.randn(len(base_tk)) * noise_tk, lo_tk, hi_tk)
                 # Convert sampled a1,a2,a3 (indices 5,6,7) to s-space
                 th[5], th[6], th[7] = _a_to_s(th[5], th[6], th[7])
                 return th
@@ -695,16 +739,16 @@ def em_mixture(thetas=None, pis=None, ksi=None, subjects=None, method=method, c=
 
         elif method == "prelec":
             # Parameter order: [r, alpha_gain, alpha_loss, lamb, beta, palpha,
-            #                   a1, a2, a3, delta]
+            #                   a1, a2, a3, delta, psi]
             # beta is fixed to 1 (single-parameter Prelec); bounds enforce this.
             base_p  = np.array([0.05, 0.88, 0.88, 2.25, 1.0, 0.65,
-                                0.0, 0.0, 0.0, 1.0])
+                                0.0, 0.0, 0.0, 1.0, 1.0])
             noise_p = np.array([0.01, 0.05, 0.05, 0.10, 0.0, 0.05,
-                                0.05, 0.05, 0.05, 0.05])
+                                0.05, 0.05, 0.05, 0.05, 0.05])
             lo_p    = np.array([b[0] for b in GlobalPrelecBounds], dtype=float)
             hi_p    = np.array([b[1] for b in GlobalPrelecBounds], dtype=float)
             def _init_p():
-                th = np.clip(base_p + np.random.randn(10) * noise_p, lo_p, hi_p)
+                th = np.clip(base_p + np.random.randn(len(base_p)) * noise_p, lo_p, hi_p)
                 # Convert sampled a1,a2,a3 (indices 6,7,8) to s-space
                 th[6], th[7], th[8] = _a_to_s(th[6], th[7], th[8])
                 return th
@@ -885,9 +929,9 @@ def write_em_results(result, filepath="em_results.txt"):
 
     param_names = {
         "tk":     ["r", "alpha_gain", "alpha_loss", "lambda", "gamma",
-                   "a1", "a2", "a3", "delta"],
+                   "a1", "a2", "a3", "delta", "psi"],
         "prelec": ["r", "alpha_gain", "alpha_loss", "lambda", "beta",
-                   "palpha", "a1", "a2", "a3", "delta"],
+                   "palpha", "a1", "a2", "a3", "delta", "psi"],
     }[method_used]
 
     lines = []

@@ -179,16 +179,16 @@ def em_mixture_parallel(
     if thetas is None:
         if method == "tk":
             base  = np.array([0.05, 0.88, 0.88, 2.25, 0.65,
-                              0.0, 0.0, 0.0, 1.0])
+                              0.0, 0.0, 0.0, 1.0, 1.0])
             noise = np.array([0.01, 0.05, 0.05, 0.10, 0.05,
-                              0.05, 0.05, 0.05, 0.05])
+                              0.05, 0.05, 0.05, 0.05, 0.05])
             lo    = np.array([b[0] for b in GlobalTKBounds], dtype=float)
             hi    = np.array([b[1] for b in GlobalTKBounds], dtype=float)
         else:
             base  = np.array([0.05, 0.88, 0.88, 2.25, 1.0, 0.65,
-                              0.0, 0.0, 0.0, 1.0])
+                              0.0, 0.0, 0.0, 1.0, 1.0])
             noise = np.array([0.01, 0.05, 0.05, 0.10, 0.0, 0.05,
-                              0.05, 0.05, 0.05, 0.05])
+                              0.05, 0.05, 0.05, 0.05, 0.05])
             lo    = np.array([b[0] for b in GlobalPrelecBounds], dtype=float)
             hi    = np.array([b[1] for b in GlobalPrelecBounds], dtype=float)
         thetas = [

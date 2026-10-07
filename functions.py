@@ -32,11 +32,16 @@ def pw(p, gamma=0.61, beta=1, alpha=1, method = "tk"):
 
 
 
-# Exponential discounting
+# Quasi-hyperbolic discounting (Laibson beta-delta form, continuous-rate delta):
+# weight(t=0) = 1, weight(t>=1) = psi * exp(-r*t).  psi=1 recovers plain
+# exponential discounting.
 
-def rho(t, r=0.97):
+def rho(t, r=0.97, psi=1.0):
 
-    return math.exp(- r * t)
+    if t == 0:
+        return 1.0
+
+    return psi * math.exp(- r * t)
 
 
 
@@ -71,13 +76,13 @@ def u_inv(y, R=0, alpha=0.88, lamb=2.25, alpha_loss=None):
 
 # Present value of an outcome stream, outcome stream is a list
 
-def PV(o, r=0.97, R=0, alpha=0.88, lamb=2.25, alpha_loss=None):
+def PV(o, r=0.97, R=0, alpha=0.88, lamb=2.25, alpha_loss=None, psi=1.0):
 
     s = 0
 
     for i in range(len(o)):
 
-        s = s + rho(i, r)*o[i]
+        s = s + rho(i, r, psi)*o[i]
 
 
     return u(s, R, alpha, lamb, alpha_loss=alpha_loss)
@@ -100,6 +105,16 @@ def dw(l, gamma=0.61, beta=1, palpha=1, method="tk"):
     x = list(l.keys())
 
     p = list(l.values())
+    total_probability = math.fsum(p)
+    if not math.isclose(total_probability, 1.0, rel_tol=0, abs_tol=1e-12):
+        raise ValueError(f"Decision-weight probabilities sum to {total_probability}")
+
+    def cumulative(start, stop):
+        # The full outcome set has probability exactly one. Do not let
+        # round-off (1 +/- epsilon) create a spurious distorted endpoint.
+        if start == 0 and stop == len(p):
+            return 1.0
+        return math.fsum(p[start:stop]) / total_probability
 
     i = 0
 
@@ -107,11 +122,11 @@ def dw(l, gamma=0.61, beta=1, palpha=1, method="tk"):
 
         if i == 0:
 
-            pi.append(pw(p[i], gamma, beta, palpha, method))
+            pi.append(pw(cumulative(0, 1), gamma, beta, palpha, method))
 
         else:
 
-            pi.append(pw(sum([p[j] for j in range(i+1)]), gamma, beta, palpha, method) - pw(sum([p[h] for h in range(i)]), gamma, beta, palpha, method))
+            pi.append(pw(cumulative(0, i+1), gamma, beta, palpha, method) - pw(cumulative(0, i), gamma, beta, palpha, method))
 
         i = i + 1
     
@@ -123,11 +138,11 @@ def dw(l, gamma=0.61, beta=1, palpha=1, method="tk"):
 
         if i == len(l) - 1:
 
-            pi.append(pw(p[i], gamma, beta, palpha, method))
+            pi.append(pw(cumulative(i, len(p)), gamma, beta, palpha, method))
 
         else:
 
-            pi.append(pw(sum([p[j] for j in range(i, len(l))]), gamma, beta, palpha, method) - pw(sum([p[h] for h in range(i+1, len(l))]), gamma, beta, palpha, method))
+            pi.append(pw(cumulative(i, len(p)), gamma, beta, palpha, method) - pw(cumulative(i+1, len(p)), gamma, beta, palpha, method))
 
         i = i + 1
 
@@ -220,6 +235,42 @@ def transform(lotteries):
 
 
 
+def conditional_lottery(lottery, t=0, Z1=0, Z2=0):
+    """Current remaining lottery, conditional on the observed payment history.
+
+    Input paths use absolute probabilities and streams [0, z1, z2, ...].
+    Keep compatible paths, normalize their probabilities, and return streams
+    [0, next_payment, ...] so the next payment is one period from *now*.
+    The original spread is retained as the established observation-noise scale.
+    """
+    if int(t) != t or t not in (0, 1, 2):
+        raise ValueError(f"Unsupported decision stage: {t}")
+    t = int(t)
+    matches = []
+    for path in lottery["outcomes"].values():
+        if len(path) != 1:
+            raise ValueError("conditional_lottery expects transform() paths")
+        probability, stream = next(iter(path.items()))
+        if probability < 0 or not np.isfinite(probability):
+            raise ValueError("Invalid absolute path probability")
+        if t >= 1 and (len(stream) < 2 or stream[1] != Z1):
+            continue
+        if t >= 2 and (len(stream) < 3 or stream[2] != Z2):
+            continue
+        matches.append((float(probability), [0] + list(stream[t + 1:])))
+    mass = sum(probability for probability, _ in matches)
+    if mass <= 0:
+        raise ValueError(f"No positive-probability path for t={t}, Z1={Z1}, Z2={Z2}")
+    if t == 0 and not np.isclose(mass, 1.0, atol=1e-12):
+        raise ValueError(f"Full-lottery path probabilities sum to {mass}")
+    if t == 0:
+        return dict(lottery)
+    return {**lottery, "outcomes": {
+        index: {probability / mass: stream}
+        for index, (probability, stream) in enumerate(matches)
+    }}
+
+
 def transform2(lotteries):
 
     lotteries_v2 = {}
@@ -269,7 +320,7 @@ def transform2(lotteries):
 
 def evaluation(
         r=0.97, R=0, alpha=0.88, lamb=2.25, gamma=0.61, lotteries=transform(lotteries_full),
-        beta=1, palpha=1, method="tk", alpha_loss=None
+        beta=1, palpha=1, method="tk", alpha_loss=None, psi=1.0
         ):
     
     lotteries_v2 = {}
@@ -302,7 +353,7 @@ def evaluation(
 
             o = list(*path.values())
 
-            pv_outcome = PV(o, r, R, alpha, lamb, alpha_loss=alpha_loss)
+            pv_outcome = PV(o, r, R, alpha, lamb, alpha_loss=alpha_loss, psi=psi)
 
             b[j] = [p, pv_outcome]
 

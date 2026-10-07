@@ -1,17 +1,24 @@
 """
 Two-step EM estimation for reference-dependent preferences.
 
+r's within-lottery discounting (functions.rho/PV, applied to a single
+lottery's own multi-period outcome stream) is quasi-hyperbolic: weight(t=0)=1,
+weight(t>=1) = psi * exp(-r*t).  psi=1 recovers plain exponential discounting.
+psi is a preference parameter like r itself — estimated in Step 1, fixed in
+Step 2. This is unrelated to delta, which still weights the cross-session
+composite reference point (RA/RLE) with plain geometric decay, unchanged.
+
 Step 1  (session 1 only, a2=a3=delta=0 fixed)
     Data    : round_number <= 16
-    Fixed   : r=0, a2=0, a3=0, delta=0
-    Estimated: alpha_gain, alpha_loss, lambda, palpha  (preference params)
+    Fixed   : a2=0, a3=0, delta=0
+    Estimated: r, alpha_gain, alpha_loss, lambda, palpha, psi  (preference params)
                a1                                (reference-point weight)
     Note    : In session 1, Z1=Z2=0 so a2·Z1=a3·Z2=0 identically;
               R_l = (1-a1)·EL, identifying a1 from cross-lottery CE variation.
 
 Step 2  (all sessions, preference params fixed)
     Data    : all sessions
-    Fixed   : r, alpha_gain, alpha_loss, lambda, palpha
+    Fixed   : r, alpha_gain, alpha_loss, lambda, palpha, psi
               (preference params from Step 1)
     Estimated: a1, a2, a3, delta  (all reference-point weights, jointly)
     Identifies from: within-subject CE changes as Z1/Z2 vary across sessions
@@ -45,13 +52,13 @@ from main import get_observed_ce
 
 # ── Index constants ───────────────────────────────────────────────────────────
 # Prelec: [r, alpha_gain, alpha_loss, lambda, beta, palpha,
-#          s1, s2, s3, delta]
+#          s1, s2, s3, delta, psi]
 _I_R, _I_ALPHA_GAIN, _I_ALPHA_LOSS, _I_LAM = 0, 1, 2, 3
 _I_BETA, _I_PALPHA = 4, 5
-_I_S1, _I_S2, _I_S3, _I_DELTA = 6, 7, 8, 9
-# TK:     [r, alpha_gain, alpha_loss, lambda, gamma, a1, a2, a3, delta]
+_I_S1, _I_S2, _I_S3, _I_DELTA, _I_PSI = 6, 7, 8, 9, 10
+# TK:     [r, alpha_gain, alpha_loss, lambda, gamma, a1, a2, a3, delta, psi]
 _TK_R, _TK_ALPHA_GAIN, _TK_ALPHA_LOSS, _TK_LAM, _TK_GAMMA = 0, 1, 2, 3, 4
-_TK_A1, _TK_A2, _TK_A3, _TK_DELTA = 5, 6, 7, 8
+_TK_A1, _TK_A2, _TK_A3, _TK_DELTA, _TK_PSI = 5, 6, 7, 8, 9
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -73,11 +80,11 @@ def run_step1(y_full, lotteries, method=GlobalMethod, c=GlobalCluster,
     if method == "prelec":
         bounds_obj         = GlobalSettings.GlobalPrelecBounds
         i_a2, i_a3, i_d   = _I_S2, _I_S3, _I_DELTA
-        free_desc          = "alpha_gain, alpha_loss, lambda, palpha, a1"
+        free_desc          = "r, alpha_gain, alpha_loss, lambda, palpha, psi, a1"
     elif method == "tk":
         bounds_obj         = GlobalSettings.GlobalTKBounds
         i_a2, i_a3, i_d   = _TK_A2, _TK_A3, _TK_DELTA
-        free_desc          = "alpha_gain, alpha_loss, lambda, gamma, a1"
+        free_desc          = "r, alpha_gain, alpha_loss, lambda, gamma, psi, a1"
     else:
         raise NotImplementedError(f"run_step1: unsupported method {method!r}")
 
@@ -133,6 +140,7 @@ def _make_step2_bounds(theta_a, method="prelec"):
         lam        = float(theta_a[_I_LAM])
         beta       = float(theta_a[_I_BETA])
         palpha     = float(theta_a[_I_PALPHA])
+        psi        = float(theta_a[_I_PSI])
         d_lo, d_hi = GlobalPrelecBounds[_I_DELTA]
         return [
             (r,          r         ),   # r          – fixed
@@ -145,6 +153,7 @@ def _make_step2_bounds(theta_a, method="prelec"):
             (0.0,        1.0       ),   # s2 slot → f3: fraction of remaining C → a3
             (0.0,        0.0       ),   # s3 slot → unused (a1 is residual)
             (d_lo,       d_hi      ),   # delta      – from GlobalPrelecBounds
+            (psi,        psi       ),   # psi        – fixed from Step 1 (like r)
         ]
     elif method == "tk":
         r          = float(theta_a[_TK_R])
@@ -152,6 +161,7 @@ def _make_step2_bounds(theta_a, method="prelec"):
         alpha_loss = float(theta_a[_TK_ALPHA_LOSS])
         lam        = float(theta_a[_TK_LAM])
         gamma      = float(theta_a[_TK_GAMMA])
+        psi        = float(theta_a[_TK_PSI])
         d_lo, d_hi = GlobalTKBounds[_TK_DELTA]
         return [
             (r,          r         ),   # r          – fixed
@@ -163,6 +173,7 @@ def _make_step2_bounds(theta_a, method="prelec"):
             (0.0,        1.0       ),   # s2 slot → f3: fraction of remaining C → a3
             (0.0,        0.0       ),   # s3 slot → unused (a1 is residual)
             (d_lo,       d_hi      ),   # delta      – from GlobalTKBounds
+            (psi,        psi       ),   # psi        – fixed from Step 1 (like r)
         ]
     else:
         raise NotImplementedError(f"_make_step2_bounds: unsupported method {method!r}")
@@ -466,9 +477,9 @@ def print_comparison(step1, step2, method="prelec"):
     """Side-by-side parameter table: step 1 vs step 2."""
     names = {
         "prelec": ["r", "alpha_gain", "alpha_loss", "lambda", "beta", "palpha",
-                   "a1", "a2", "a3", "delta"],
+                   "a1", "a2", "a3", "delta", "psi"],
         "tk":     ["r", "alpha_gain", "alpha_loss", "lambda", "gamma",
-                   "a1", "a2", "a3", "delta"],
+                   "a1", "a2", "a3", "delta", "psi"],
     }[method]
 
     c  = len(step1["thetas"])
