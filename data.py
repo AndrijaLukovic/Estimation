@@ -45,8 +45,11 @@ def process(export_excel=False, excel_path=GlobalData):
     incomplete_subjects = has_quiz6[~has_quiz6].index
     data = data[~data["participant_label"].isin(incomplete_subjects)]
 
-    # Drop rows who report too complicated in the post experiment questionnaire.
-    to_drop_subjects = data[data["quiz6"] == "Too complicated or extremely complicated"]["participant_label"].unique()
+    # Drop participants who report very complicated or worse in the questionnaire.
+    to_drop_subjects = data.loc[
+        data["quiz6"].isin(["Very complicated", "Too complicated or extremely complicated"]),
+        "participant_label",
+    ].unique()
     data = data[~data["participant_label"].isin(to_drop_subjects)]
 
     # Drop participants who are too fast 

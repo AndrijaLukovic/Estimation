@@ -1,21 +1,35 @@
 "use strict";
-(() => {
-  const DATA = JSON.parse(document.getElementById("report-data").textContent);
+(async () => {
+  const DATA = await window.ReportLoader.load();
+  const LOCALE = DATA.language === "en" ? "en-US" : "zh-CN";
   const $ = id => document.getElementById(id);
   const COLORS = ["#718096", "#d49436", "#8b5cc7", "#268b89", "#bf6278", "#3676a9"];
   const RP = ["SQ", "PA", "LE", "FE"];
   const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const finite = value => typeof value === "number" && Number.isFinite(value);
   const fmt = (value, digits=4) => !finite(value) ? "—" :
-    (value !== 0 && (Math.abs(value) < 0.0001 || Math.abs(value) >= 1e7) ? value.toExponential(4) : value.toLocaleString("zh-CN", {maximumFractionDigits:digits}));
+    (value !== 0 && (Math.abs(value) < 0.0001 || Math.abs(value) >= 1e7) ? value.toExponential(4) : value.toLocaleString(LOCALE, {maximumFractionDigits:digits}));
   const pct = value => finite(value) ? (value*100).toFixed(2)+"%" : "—";
+  const limitFmt = value => value === "Infinity" || value === Infinity ? "+∞" : fmt(value,6);
   const badge = (text, style="") => `<span class="badge ${style}">${esc(text)}</span>`;
   const prob = file => file.probability_pass === true ? badge("通过") : file.probability_pass === false ? badge("不通过","bad") : badge("未完全核对","muted");
   const conv = file => file.converged ? badge("LL 容差") : badge(file.exit_reason || "未知","warn");
   const table = (headers, rows) => `<table><thead><tr>${headers.map(h=>`<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${rows.map(row=>`<tr>${row.map(cell=>`<td>${cell}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
   function card(label, value, note="") { return `<div class="card"><div class="label">${esc(label)}</div><div class="value num">${esc(value)}</div><div class="muted">${esc(note)}</div></div>`; }
   function download(name, text, type="text/plain;charset=utf-8") {
-    const a=document.createElement("a"), url=URL.createObjectURL(new Blob([text],{type}));
+    const blob=new Blob([text],{type});
+    if(blob.size>25000000) {
+      const panel=document.createElement("div");panel.className="notice downloads";
+      const note=document.createElement("p");note.textContent="下载已无损拆分；按清单顺序连接各分块即可还原完整文件。";panel.appendChild(note);
+      const parts=[];
+      function link(filename,chunk) {const a=document.createElement("a");a.href=URL.createObjectURL(chunk);a.download=filename;a.textContent=filename;panel.appendChild(a);panel.appendChild(document.createTextNode(" · "));}
+      for(let offset=0,index=1;offset<blob.size;offset+=20000000,index++) {
+        const filename=`${name}.part${String(index).padStart(4,"0")}`;parts.push(filename);link(filename,blob.slice(offset,offset+20000000));
+      }
+      link(name+".parts.json",new Blob([JSON.stringify({original_file:name,bytes:blob.size,parts},null,2)],{type:"application/json"}));
+      document.querySelector("main").appendChild(panel);panel.scrollIntoView({behavior:"smooth"});return;
+    }
+    const a=document.createElement("a"), url=URL.createObjectURL(blob);
     a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
   function csv(headers, rows) {
@@ -36,7 +50,7 @@
     series=series.map(s=>({...s,points:s.points.filter(p=>finite(p[0])&&finite(p[1]))})).filter(s=>s.points.length);
     if(!series.length)return emptyChart(id,title);
     const host=$(id);host.innerHTML=`<div class="chart"><h3>${esc(title)}</h3></div>`;const wrap=host.firstChild;
-    const W=680,H=310,M={left:65,right:24,top:14,bottom:52};
+    const W=680,H=310,M={left:options.ylabel?85:65,right:24,top:14,bottom:52};
     const points=series.flatMap(s=>s.points);let xmin=options.xmin??Math.min(...points.map(p=>p[0])),xmax=options.xmax??Math.max(...points.map(p=>p[0]));
     let ymin=options.ymin??Math.min(...points.map(p=>p[1])),ymax=options.ymax??Math.max(...points.map(p=>p[1]));
     if(xmin===xmax){xmin-=.5;xmax+=.5;}if(ymin===ymax){const pad=Math.max(1e-6,Math.abs(ymin)*.01);ymin-=pad;ymax+=pad;}
@@ -49,7 +63,9 @@
       const x=xmin+(xmax-xmin)*i/4;svg.appendChild(svgElement("text",{x:X(x),y:H-M.bottom+20,"text-anchor":"middle"},options.xformat?options.xformat(x):fmt(x,2)));
     }
     svg.appendChild(svgElement("text",{x:(W+M.left)/2,y:H-5,"text-anchor":"middle"},options.xlabel||""));
+    if(options.ylabel)svg.appendChild(svgElement("text",{transform:`translate(14 ${(H-M.bottom+M.top)/2}) rotate(-90)`,"text-anchor":"middle"},options.ylabel));
     if(options.zero&&ymin<0&&ymax>0)svg.appendChild(svgElement("line",{x1:M.left,y1:Y(0),x2:W-M.right,y2:Y(0),stroke:"#8597a5","stroke-dasharray":"4 4"}));
+    if(options.reference&&xmin<0&&xmax>0)svg.appendChild(svgElement("line",{x1:X(0),y1:M.top,x2:X(0),y2:H-M.bottom,stroke:"#8597a5","stroke-dasharray":"4 4"}));
     series.forEach((s,i)=>{
       const color=s.color||COLORS[i%COLORS.length];svg.appendChild(svgElement("path",{d:s.points.map((p,j)=>`${j?"L":"M"}${X(p[0])},${Y(p[1])}`).join(" "),fill:"none",stroke:color,"stroke-width":s.dashed?1.3:2,"stroke-dasharray":s.dashed?"5 4":""}));
       if(s.points.length<12)s.points.forEach(p=>svg.appendChild(svgElement("circle",{cx:X(p[0]),cy:Y(p[1]),r:3,fill:color})));
@@ -95,6 +111,12 @@
     return clusters.map((c,i)=>({name:prefix+c.label,color:COLORS[i%COLORS.length],points:Array.from({length:121},(_,j)=>{
       const x=-2+j*.05;return [x,Math.log10(c.values.lambda)+(c.values.alpha_loss-c.values.alpha_gain)*x];})}));
   }
+  function utilitySeries(clusters,extent=100,prefix="") {
+    const positive=Array.from({length:201},(_,i)=>extent*10**(-6+6*i/200));
+    const offsets=[...positive.slice().reverse().map(z=>-z),0,...positive];
+    return clusters.map((c,i)=>({name:prefix+c.label,color:COLORS[i%COLORS.length],points:offsets.map(z=>
+      [z,z>=0?z**c.values.alpha_gain:-c.values.lambda*(-z)**c.values.alpha_loss])}));
+  }
   function dashboard() {
     const files=DATA.files,selected=new Set();let filtered=[],page=0,sortKey="bic",sortDirection=1;
     $("snapshot").textContent=`生成时间 ${DATA.generated_at} · 数据快照 ${DATA.input_dir}`;
@@ -104,6 +126,10 @@
     if(DATA.counts.errors||!DATA.source_matches)$("integrity").classList.add("warn");
     $("protocol").textContent=JSON.stringify(DATA.protocol,null,2);
     $("progress-only").innerHTML=DATA.progress_only.length?table(["文件","记录状态","迭代","记录 LL"],DATA.progress_only.map(p=>[esc(p.path),esc(p.status),fmt(p.iteration,0),fmt(p.log_likelihood)])):"没有仅进度记录。";
+    if(DATA.downloads) {
+      const labels={parameters:"全部参数 CSV",diagnostics:"所有文件诊断 CSV",catalog:"报告目录 JSON"};
+      $("report-downloads").innerHTML=Object.entries(DATA.downloads).flatMap(([kind,parts])=>parts.map((path,i)=>`<a href="${esc(path)}">${esc(labels[kind])} ${parts.length>1?i+1:""}</a>`)).join(" · ");
+    }
     function passes(file) {
       const s=file.spec||{},q=$("quality").value,kind=$("kind").value;
       if(kind!=="all"&&file.kind!==kind)return false;
@@ -145,9 +171,12 @@
     function renderComparison() {
       const fs=files.filter(f=>selected.has(f.id));$("comparison-section").hidden=fs.length===0;if(!fs.length)return;
       const groups=new Set(fs.map(f=>f.comparison_group));$("compare-warning").textContent=groups.size>1?"所选文件的 ΔBIC 基准不同。原始 BIC 只有在样本和估值协议一致时才可比较；测试设计也需要分别解释。Test 1 的自由类别编号不保证跨模型对应同一类。":"所选文件属于相同比较组。高后验、低 BIC 与达到 LL 容差均不能证明真实机制或全局最优。";
-      const measures=[["BIC",f=>fmt(f.bic,2)],["ΔBIC",f=>fmt(f.delta_bic,2)],["LL",f=>fmt(f.ll,4)],["同配置 ΔLL",f=>fmt(f.delta_ll,4)],["自由参数 k",f=>fmt(f.k,0)],["类别数",f=>fmt(f.spec.C,0)],["收敛",conv],["概率检查",prob],["近零 Prelec",f=>f.near_zero_prelec?"是":"否"],["边界数",f=>fmt(f.boundary_count,0)],["优化器非成功",f=>fmt(f.optimizer_unsuccessful,0)],["归一化 RMSE",f=>fmt(f.normalized_rmse,6)],["ξ 中位数",f=>fmt(f.ksi_median,6)],["后验中位数",f=>fmt(f.posterior_median,6)]];
+      const measures=[["BIC",f=>fmt(f.bic,2)],["ΔBIC",f=>fmt(f.delta_bic,2)],["LL",f=>fmt(f.ll,4)],["同配置 ΔLL",f=>fmt(f.delta_ll,4)],["自由参数 k",f=>fmt(f.k,0)],["类别数",f=>fmt(f.spec.C,0)],["lim A(d), d→0⁺",f=>f.clusters.map(c=>`${esc(c.label)}: ${limitFmt(c.amplitude_zero_limit)}`).join("<br>")],["收敛",conv],["概率检查",prob],["近零 Prelec",f=>f.near_zero_prelec?"是":"否"],["边界数",f=>fmt(f.boundary_count,0)],["优化器非成功",f=>fmt(f.optimizer_unsuccessful,0)],["归一化 RMSE",f=>fmt(f.normalized_rmse,6)],["ξ 中位数",f=>fmt(f.ksi_median,6)],["后验中位数",f=>fmt(f.posterior_median,6)]];
       $("compare-table").innerHTML=table(["指标",...fs.map((f,i)=>`${i+1} · ${f.config_id} ${f.kind==="restart"?f.restart_id:""}`)],measures.map(([label,value])=>[esc(label),...fs.map(value)]));
       const curves=fs.flatMap((f,i)=>ratioSeries(f.clusters,`${i+1} · `));lineChart("compare-chart","各文件、各类别的 log10 A(d)：0 表示等额总幅度相同",curves,{xlabel:"金额 d（英镑，对数刻度）",xformat:x=>`£${fmt(10**x,2)}`,zero:true});
+      const utilities=fs.flatMap((f,i)=>utilitySeries(f.clusters,100,`${i+1} · `));
+      utilities.forEach((curve,i)=>curve.color=COLORS[i%COLORS.length]);
+      lineChart("compare-utility-chart","所选模型的效用函数 u(z)",utilities,{xlabel:"相对参考点的金额 z=x−R（英镑）",ylabel:"u(z)",zero:true,reference:true});
     }
     for(const id of ["kind","test","pw","discount","curvature","memory","clusters","quality","hide-alias"])$(id).onchange=()=>{page=0;render();};
     $("search").oninput=()=>{page=0;render();};$("prev").onclick=()=>{page--;render();};$("next").onclick=()=>{page++;render();};
@@ -157,7 +186,7 @@
   }
   function detail() {
     const d=DATA,s=d.summary,r=d.record,c=d.clusters||[];
-    $("detail-title").textContent=s.config_id;$("detail-subtitle").textContent=`${s.path} · ${d.generated_at||""}`;
+    document.title=s.config_id;$("detail-title").textContent=s.config_id;$("detail-subtitle").textContent=`${s.path} · ${d.generated_at||""}`;
     if(d.error){document.querySelector("main").innerHTML=`<div class="error-view"><h2>这个文件未能转换</h2><pre>${esc(d.error)}</pre></div>`;return;}
     $("detail-cards").innerHTML=card("BIC",fmt(s.bic,2))+card("LL",fmt(s.ll,4))+card("类别／自由参数",`${s.spec.C??"—"} / ${s.k??"—"}`)+card("迭代数",fmt(s.n_iter,0))+card("概率检查",s.probability_pass===true?"通过":s.probability_pass===false?"不通过":"未完全核对")+card("ξ 中位数",fmt(s.ksi_median,5));
     $("detail-warning").textContent=(s.warnings?.length?s.warnings.join("；")+"。":"保存诊断未检出上述警示。")+" 不代表全局最优；未提供标准误、置信区间及样本外验证。";
@@ -166,7 +195,7 @@
     const rendered=new Set();
     function parameters() {
       if(!c.length)return;
-      $("cluster-overview").innerHTML=table(["类别","π","后验软人数","MAP 人数",...RP,"概率参数","概率单调","实际负权重状态","A(100)"],c.map(q=>[esc(q.label),pct(q.pi),fmt(q.soft_n,2),fmt(q.map_n,0),...q.weights.map(pct),fmt(q.probability_parameter,6),q.monotone?"是":"否",fmt(q.negative_states,0),fmt(q.amplitude_100,6)]));
+      $("cluster-overview").innerHTML=table(["类别","π","后验软人数","MAP 人数",...RP,"概率参数","概率单调","实际负权重状态","lim A(d), d→0⁺"],c.map(q=>[esc(q.label),pct(q.pi),fmt(q.soft_n,2),fmt(q.map_n,0),...q.weights.map(pct),fmt(q.probability_parameter,6),q.monotone?"是":"否",fmt(q.negative_states,0),limitFmt(q.amplitude_zero_limit)]));
       $("parameter-table").innerHTML=table(["类别","参数","值","估计状态","下界","上界","边界警示"],c.flatMap(q=>q.parameters.map(p=>[esc(q.label),esc(p.name+(["s1","s2","s3"].includes(p.name)?"（内部编码）":"")),fmt(p.value,9),esc(p.status),fmt(p.lower,6),fmt(p.upper,6),p.boundary?badge(p.boundary,"warn"):"—"])));
       const W=680,H=c.length*43+40,svg=svgElement("svg",{viewBox:`0 0 ${W} ${H}`,role:"img","aria-label":"参考点组合权重"});$("reference-chart").innerHTML='<div class="chart"><h3>每类的参考点组合权重</h3></div>';$("reference-chart").firstChild.appendChild(svg);
       c.forEach((q,i)=>{let x=90;svg.appendChild(svgElement("text",{x:80,y:i*43+25,"text-anchor":"end"},q.label));q.weights.forEach((w,j)=>{const rect=svgElement("rect",{x,y:i*43+8,width:Math.max(0,w)*520,height:28,fill:COLORS[j]});rect.appendChild(svgElement("title",{},`${q.label} · ${RP[j]}: ${pct(w)}`));svg.appendChild(rect);if(w>.08)svg.appendChild(svgElement("text",{x:x+w*260,y:i*43+27,"text-anchor":"middle",style:"fill:white"},`${RP[j]} ${pct(w)}`));x+=w*520;});});
@@ -177,9 +206,11 @@
         if(!Number.isFinite(value)||value<=0)return;$("amount-live").textContent=`£${fmt(value,2)}`;
         $("amount-table").innerHTML=table(["类别",`A(£${fmt(value,2)})`,`M(£${fmt(value,2)})`,"总幅度比较","边际比较"],c.map(q=>{const v=q.values,A=v.lambda*value**(v.alpha_loss-v.alpha_gain),M=A*v.alpha_loss/v.alpha_gain;return [esc(q.label),fmt(A,7),fmt(M,7),A>1?"损失较大":"收益较大／相等",M>1?"损失较敏感":"收益较敏感／相等"];}));
         lineChart("amount-chart","金额依赖：log10 A(d)，0 代表等额损益总幅度相同",ratioSeries(c),{xlabel:"相对参考点的金额 d（英镑，对数刻度）",xformat:x=>`£${fmt(10**x,2)}`,zero:true});
+        lineChart("utility-chart","效用函数 u(z)",utilitySeries(c,value),{xmin:-value,xmax:value,xlabel:"相对参考点的金额 z=x−R（英镑）",ylabel:"u(z)",zero:true,reference:true});
       }
       $("amount").oninput=()=>{$("amount-range").value=Math.log10(Math.max(.01,Number($("amount").value)||.01));amount();};
       $("amount-range").oninput=()=>{$("amount").value=(10**Number($("amount-range").value)).toFixed(2);amount();};amount();
+      if(s.utility_figures){$("utility-downloads").hidden=false;$("utility-svg").href=s.utility_figures.svg;$("utility-png").href=s.utility_figures.png;}
     }
     function convergence() {
       const logs=r.iter_log||[],o=r.optimizer_log||[],g=d.diagnostics;let page=0;
@@ -233,4 +264,7 @@
     else{document.querySelectorAll("[data-panel]").forEach(p=>p.hidden=p.dataset.panel!=="raw");document.querySelectorAll("#detail-tabs button").forEach(b=>{b.disabled=b.dataset.tab!=="raw";b.classList.toggle("active",b.dataset.tab==="raw");});raw();rendered.add("raw");}
   }
   if(document.body.dataset.page==="dashboard")dashboard();else detail();
-})();
+})().catch(error=>{
+  const main=document.querySelector("main");
+  main.textContent=(document.documentElement.lang==="en"?"Unable to open report: ":"无法打开报告：")+error.message;
+});

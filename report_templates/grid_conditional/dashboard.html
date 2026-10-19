@@ -29,7 +29,7 @@
   <section id="comparison-section" hidden>
     <div class="section-title"><h2>并排比较</h2><button id="clear-compare">清空</button></div>
     <div id="compare-warning" class="notice"></div><div id="compare-table" class="table-wrap"></div>
-    <div id="compare-chart"></div>
+    <div class="chart-grid"><div id="compare-utility-chart"></div><div id="compare-chart"></div></div>
   </section>
   <section id="reader-section" hidden>
     <div class="section-title"><h2 id="reader-title">文件详情</h2><a id="open-detail" target="_blank" rel="noopener">独立打开详情页 ↗</a></div>
@@ -49,7 +49,8 @@
     </div>
     <details><summary>只有进度 JSON、尚无完整 pickle 的记录</summary><div id="progress-only"></div></details>
     <details><summary>估计协议与代码／数据指纹</summary><pre id="protocol"></pre></details>
-    <p class="downloads"><a href="diagnostics.csv">所有文件诊断 CSV</a> · <a href="parameters.csv">全部参数 CSV</a> · <a href="catalog.json">报告目录 JSON</a> · <a href="manifest.json">文件 SHA256 与转换清单</a> · <a href="README.md">使用说明</a></p>
+    <p id="report-downloads" class="downloads"></p>
+    <p class="downloads"><a href="catalog.json">报告分块目录</a> · <a href="manifest.json">文件 SHA256 与转换清单</a> · <a href="README.md">使用说明</a></p>
     <p class="downloads"><a href="figures/model_bic_overview.svg">下载模型 BIC 图（SVG）</a> · <a href="figures/restart_ll_spread.svg">下载起点稳定性图（SVG）</a></p>
   </section>
 </main>

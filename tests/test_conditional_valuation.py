@@ -54,8 +54,8 @@ class ConditionalValuationTests(unittest.TestCase):
             self.assertAlmostEqual(result["V"], expected, places=10)
 
     def test_complete_sample_and_all_observed_histories(self):
-        self.assertEqual(len(self.data.subjects), 1131)
-        self.assertEqual(len(self.data.observed), 20357)
+        self.assertEqual(len(self.data.subjects), 1081)
+        self.assertEqual(len(self.data.observed), 19457)
         self.assertEqual(len(self.data.state_y), 40)
         self.assertTrue(np.allclose(self.data.probabilities.sum(axis=1), 1))
 

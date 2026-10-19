@@ -37,8 +37,8 @@ SOURCE_FILES = ["functions.py", "Mixture.py", "grid_em.py", "run_conditional_gri
                 "data.py", "main.py", "gamedata.csv"]
 
 
-def initial_values(result, spec):
-    """Project a saved canonical parameter set to a compatible target layout."""
+def initial_values(result, spec, subjects=None):
+    """Project saved parameters and align individual noise by participant ID."""
     layouts, identities = spec_cluster_layouts(spec)
     if len(result["thetas"]) != spec.C or result["spec"].pw != spec.pw:
         raise ValueError("Incompatible warm start")
@@ -54,7 +54,17 @@ def initial_values(result, spec):
             vector.append(effective_le)
         vectors.append(np.array([np.clip(value, low, high)
                                 for value, (low, high) in zip(vector, bounds_free(layout))]))
-    return dict(free_vecs=vectors, pis=result["pis"].copy(), ksi=result["ksi"].copy())
+    ksi = np.asarray(result["ksi"]).copy()
+    if subjects is not None:
+        source_subjects = result["subjects"]
+        source_index = {subject: i for i, subject in enumerate(source_subjects)}
+        if ksi.shape != (len(source_subjects),) or len(source_index) != len(source_subjects):
+            raise ValueError("Warm start must have one noise parameter per unique participant")
+        missing = [subject for subject in subjects if subject not in source_index]
+        if missing:
+            raise ValueError(f"Warm start is missing {len(missing)} target participants")
+        ksi = ksi[[source_index[subject] for subject in subjects]]
+    return dict(free_vecs=vectors, pis=result["pis"].copy(), ksi=ksi)
 
 
 def equivalent_result(result, spec):
@@ -72,6 +82,16 @@ def atomic_json(path, value):
     temporary = path.with_suffix(".tmp.json")
     temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2))
     temporary.replace(path)
+
+
+def write_protocol(output, protocol):
+    """Allow a failed preflight to retry, but protect existing estimation files."""
+    manifest = output / "run_protocol.json"
+    if manifest.exists() and json.loads(manifest.read_text()).get("fingerprint") != protocol["fingerprint"]:
+        if any(path.is_file() for path in output.glob("test*/**/*")):
+            raise ValueError("Output directory contains a different protocol; choose a new directory")
+        print("Updating protocol: output directory has no estimation files yet.", flush=True)
+    atomic_json(manifest, protocol)
 
 
 def save(output, spec, result, n_obs, elapsed, fingerprint):
@@ -159,15 +179,13 @@ def main():
         memory_equivalence="fit 104 distinct models; save 144 configurations with labelled pure-reference aliases")
     fingerprint=hashlib.sha256(json.dumps(protocol,sort_keys=True).encode()).hexdigest()
     protocol["fingerprint"]=fingerprint
-    manifest=output/"run_protocol.json"
-    if manifest.exists() and json.loads(manifest.read_text()).get("fingerprint") != fingerprint:
-        raise ValueError("Output directory contains a different protocol; choose a new directory")
-    atomic_json(manifest,protocol)
+    write_protocol(output,protocol)
     snapshot=output/"corrected_source_snapshot";snapshot.mkdir(exist_ok=True)
     for name in SOURCE_FILES:(snapshot/name).write_bytes((ROOT/name).read_bytes())
     observed=get_observed_ce(export_excel=False)
     lotteries=f.transform(GlobalLottery)
     valid=observed[observed.lottery_id.isin(lotteries)].dropna(subset=["ce_observed"])
+    subjects=sorted(valid.participant_label.unique())
     seeds=GlobalSeedsSet[:args.seeds]
     print(f"CONDITIONAL REFIT: {len(jobs)} configurations, {valid.participant_label.nunique()} subjects, {len(valid)} CEs; priority Test 3",flush=True)
     current_test=None
@@ -196,8 +214,10 @@ def main():
             path=ROOT/"results_grid"/old_id/"result.pkl"
             if path.exists():
                 with path.open("rb") as fh:old=pickle.load(fh)
-                if old["subjects"] != sorted(valid.participant_label.unique()):raise ValueError("Warm-start subject mismatch")
-                initializations["legacy_"+old_id]=initial_values(old,spec)
+                if not set(subjects).issubset(old["subjects"]):
+                    print(f"  SKIP legacy warm start {old_id}: target participants missing",flush=True)
+                    continue
+                initializations["legacy_"+old_id]=initial_values(old,spec,subjects=subjects)
         # An already fitted restricted model is a feasible warm start for a
         # broader setting, preventing avoidable nested-model LL reversals.
         candidates=[]
@@ -211,7 +231,7 @@ def main():
                 candidates.append((score,meta["config_id"]))
         for _,source_id in sorted(candidates)[:2]:
             source=load_completed(output,source_id,fingerprint)
-            initializations["corrected_"+source_id]=initial_values(source,spec)
+            initializations["corrected_"+source_id]=initial_values(source,spec,subjects=subjects)
         started=time.time()
         result=grid_em_multistart(spec,seeds,y=observed,lotteries=lotteries,max_iter=args.max_iter,
             tol=args.tol,n_workers=args.n_workers,initializations=initializations,checkpoint_dir=checkpoint)

@@ -12,5 +12,8 @@ pilot.xlsx
 *.txt
 /results_grid/
 /reports
+/.reports-organize-*/
+/reports/grid_em_conditional_explorer_en/
 /results_grid_conditional/
 /results_grid_conditional_100/
+/results_grid_conditional_stricter/

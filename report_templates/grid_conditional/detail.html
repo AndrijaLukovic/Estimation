@@ -12,7 +12,10 @@
     <p class="note">内部编码：aSQ=s1，aPA=(1−s1)s2，aLE=(1−s1)(1−s2)s3，aFE=1−前三者之和。自由、固定、绑定及当前未使用的参数分别标记；固定值不计入自由参数边界警示。</p>
     <div class="chart-grid"><div id="reference-chart"></div><div id="probability-chart"></div></div>
     <div class="controls"><label>相对参考点的金额 £ <input id="amount" type="number" min="0.01" max="1000000" step="1" value="100"></label><input id="amount-range" type="range" min="-2" max="4" step="0.05" value="2"><span id="amount-live"></span></div>
-    <div id="amount-table" class="table-wrap"></div><div id="amount-chart"></div>
+    <p class="note">效用图以 z=x−R 为横轴，绘图范围为所选金额的正负两侧。z≥0 时 u(z)=z^α⁺，z&lt;0 时 u(z)=−λ(−z)^α⁻；每条曲线对应一个类别。</p>
+    <div id="amount-table" class="table-wrap"></div><div class="chart-grid"><div id="utility-chart"></div><div id="amount-chart"></div></div>
+    <p id="utility-downloads" class="downloads" hidden><a id="utility-svg">下载效用函数图（SVG）</a> · <a id="utility-png">下载效用函数图（PNG）</a> · 默认范围 ±£100</p>
+    <p class="note">A(d)=λd^(α⁻−α⁺)，d→0⁺ 时的极限：α⁻>α⁺ 为 0，α⁻=α⁺ 为 λ，α⁻&lt;α⁺ 为 +∞。曲率的大小关系按估计值精确比较。</p>
     <p class="note">概率图展示累计概率函数 w(p)，不是各分支直接替代概率。A(d) 与 M(d) 均依赖金额、曲率和货币单位；λ&gt;1 不保证每个金额上都更损失敏感。</p>
   </section>
   <section data-panel="convergence" hidden>
@@ -44,4 +47,4 @@
     <div class="controls"><label>选择字段<select id="raw-field"></select></label><button id="download-json">下载完整可读 JSON</button></div><pre id="raw-view"></pre>
     <details><summary>模型元数据 meta.json</summary><pre id="meta-view"></pre></details>
   </section>
-</main><div id="tooltip" role="status"></div><footer>可独立打开本页；保留报告 assets 目录即可使用交互功能。</footer>
+</main><div id="tooltip" role="status"></div><footer>通过网址中的 id 打开对应记录；保留报告 assets 和 data 目录即可离线使用。</footer>
