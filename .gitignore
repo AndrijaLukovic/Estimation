@@ -6,6 +6,7 @@
 **/Parameter recovery/__pycache__/
 pilot.csv
 pilot.xlsx
+*.csv
 /.claude/
 /__pycache__/
 *.pyc
@@ -17,3 +18,5 @@ pilot.xlsx
 /results_grid_conditional/
 /results_grid_conditional_100/
 /results_grid_conditional_stricter/
+/results_grid_conditional_stricter_no_endpoint*/
+/profiles
