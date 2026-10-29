@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import pickle
 import re
+import sys
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
@@ -14,32 +15,41 @@ from urllib.parse import parse_qs
 
 import numpy as np
 
-import export_conditional_html as report
-from model_spec import ModelSpec, build_cluster_layout, expand_free, init_free
-from report_storage import read_bundle_value
+from estimation.config import LOTTERIES, ROOT
+from estimation.diagnostics import probability_shape
+from estimation.lottery_paths import transform
+from estimation.prepare import prepare_grid_data
+from estimation.report.export import export
+from estimation.report.i18n import TEMPLATES, localize
+from estimation.report.serialize import embed_json, json_text, readable
+from estimation.report.storage import read_bundle_value
+from estimation.report.summary import amplitude_zero_limit, audit_result, cluster_parameters, utility_curve
+from estimation.spec import CANON, ModelSpec, bounds_free, build_cluster_layout, expand_free, init_free
+from estimation.valuation import s_to_a
+from scripts.export_report import parse_args
 
 
 class ReportLanguageTests(unittest.TestCase):
     def test_cli_language_defaults_and_output_override(self):
-        chinese=report.parse_args([])
-        english=report.parse_args(["--language","en"])
+        chinese=parse_args([])
+        english=parse_args(["--language","en"])
         self.assertEqual(chinese.language,"zh")
-        self.assertEqual(chinese.output_dir,report.ROOT/"reports/grid_em_conditional_explorer")
-        self.assertEqual(english.output_dir,report.ROOT/"reports/grid_em_conditional_explorer_en")
+        self.assertEqual(chinese.output_dir,ROOT/"reports/grid_em_conditional_explorer")
+        self.assertEqual(english.output_dir,ROOT/"reports/grid_em_conditional_explorer_en")
         self.assertNotEqual(chinese.output_dir,english.output_dir)
-        custom=report.parse_args(["--lang","en","--output-dir","reports/custom"])
+        custom=parse_args(["--lang","en","--output-dir","reports/custom"])
         self.assertEqual(custom.output_dir,Path("reports/custom"))
         with patch("sys.stderr",new=io.StringIO()):
-            with self.assertRaises(SystemExit):report.parse_args(["--language","fr"])
-            with self.assertRaises(SystemExit):report.parse_args(["--language","en","--boundary-tol","-1"])
+            with self.assertRaises(SystemExit):parse_args(["--language","fr"])
+            with self.assertRaises(SystemExit):parse_args(["--language","en","--boundary-tol","-1"])
 
     def test_english_templates_and_script_have_no_untranslated_chinese(self):
         for name in ["dashboard.html","detail.html","app.js"]:
             with self.subTest(asset=name):
-                source=(report.ASSETS/name).read_text(encoding="utf-8")
+                source=(TEMPLATES/name).read_text(encoding="utf-8")
                 self.assertRegex(source,r"[\u3400-\u9fff]")
-                self.assertEqual(report.localize(source,"zh"),source)
-                self.assertNotRegex(report.localize(source,"en"),r"[\u3400-\u9fff]")
+                self.assertEqual(localize(source,"zh"),source)
+                self.assertNotRegex(localize(source,"en"),r"[\u3400-\u9fff]")
 
     @staticmethod
     def make_result():
@@ -47,8 +57,8 @@ class ReportLanguageTests(unittest.TestCase):
         layout=build_cluster_layout(spec)
         free=init_free(layout,np.random.default_rng(42))
         theta,delta_le=expand_free(free,layout)
-        theta[report.CANON[spec.pw]["R"]]=report.bounds_free(layout)[0][0]
-        theta[report.CANON[spec.pw]["S1"]]=1
+        theta[CANON[spec.pw]["R"]]=bounds_free(layout)[0][0]
+        theta[CANON[spec.pw]["S1"]]=1
         return dict(spec=spec,thetas=[theta],delta_les=[delta_le],layouts=[layout],free_vecs=[free],
             resp=np.ones((2,1)),ksi=np.array([.25,.5]),subjects=["参与者甲","person2"],
             pis=np.ones(1),rp_identities=[None],log_likelihood=-3.,n_obs=4,
@@ -82,9 +92,9 @@ class ReportLanguageTests(unittest.TestCase):
             catalogs={}
             for language in ["zh","en"]:
                 output=root/language
-                args=report.parse_args(["--language",language,"--input-dir",str(inputs),
+                args=parse_args(["--language",language,"--input-dir",str(inputs),
                     "--output-dir",str(output),"--audit","none"])
-                with redirect_stdout(io.StringIO()):catalogs[language]=report.export(args)
+                with redirect_stdout(io.StringIO()):catalogs[language]=export(args)
                 self.assertIn(f'lang="{"en" if language=="en" else "zh-CN"}"',(output/"index.html").read_text())
                 self.assertEqual(json.loads((output/"manifest.json").read_text())["language"],language)
                 for figure in ["model_bic_overview","restart_ll_spread"]:
@@ -125,7 +135,7 @@ class ReportLanguageTests(unittest.TestCase):
             for parameter in parameters:
                 self.assertNotRegex(parameter["status"]+parameter["boundary"],r"[\u3400-\u9fff]")
             readme=(root/"en/README.md").read_text()
-            self.assertIn("python export_conditional_html.py --language en",readme)
+            self.assertIn("python scripts/export_report.py --language en",readme)
             self.assertNotRegex(readme,r"[\u3400-\u9fff]")
             self.assertEqual((model/"result.pkl").read_bytes(),original)
 
@@ -135,20 +145,20 @@ class UtilityReportTests(unittest.TestCase):
         for gain,loss,expected in [(1.,2.,0.),(1.,1.,2.25),(2.,1.,float("inf")),
                                   (1.,1.+1e-12,0.),(1.,1.-1e-12,float("inf"))]:
             with self.subTest(gain=gain,loss=loss):
-                self.assertEqual(report.amplitude_zero_limit(2.25,gain,loss),expected)
+                self.assertEqual(amplitude_zero_limit(2.25,gain,loss),expected)
 
     def test_infinite_zero_limit_is_preserved_in_both_report_languages(self):
         result=ReportLanguageTests.make_result()
-        result["thetas"][0][report.CANON[result["spec"].pw]["AG"]]=1.
-        result["thetas"][0][report.CANON[result["spec"].pw]["AL"]]=.5
+        result["thetas"][0][CANON[result["spec"].pw]["AG"]]=1.
+        result["thetas"][0][CANON[result["spec"].pw]["AL"]]=.5
         for language in ["zh","en"]:
             with self.subTest(language=language):
-                clusters=report.cluster_parameters(result,1e-4,language)
+                clusters=cluster_parameters(result,1e-4,language)
                 self.assertEqual(clusters[0]["amplitude_zero_limit"],float("inf"))
-                self.assertEqual(json.loads(report.json_text(clusters))[0]["amplitude_zero_limit"],"Infinity")
+                self.assertEqual(json.loads(json_text(clusters))[0]["amplitude_zero_limit"],"Infinity")
 
     def test_utility_figure_uses_separate_gain_and_loss_curvature(self):
-        offsets,utility=report.utility_curve({"alpha_gain":.5,"alpha_loss":2.,"lambda":2.},extent=9)
+        offsets,utility=utility_curve({"alpha_gain":.5,"alpha_loss":2.,"lambda":2.},extent=9)
         self.assertEqual(offsets[0],-9)
         self.assertEqual(offsets[-1],9)
         self.assertEqual(utility[0],-162)
@@ -162,30 +172,30 @@ class UtilityReportTests(unittest.TestCase):
 class ConditionalHTMLTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        path=report.ROOT/"results_grid_conditional/test1_qh_sepalpha_commem_prelec_C2/result.pkl"
+        path=ROOT/"results_grid_conditional/test1_qh_sepalpha_commem_prelec_C2/result.pkl"
         if not path.exists():raise unittest.SkipTest("Requires a saved conditional-grid C=2 result")
         with path.open("rb") as fh:cls.result=pickle.load(fh)
 
     def test_reference_coefficients_are_not_internal_sticks(self):
-        clusters=report.cluster_parameters(self.result,1e-4)
+        clusters=cluster_parameters(self.result,1e-4)
         for theta,c in zip(self.result["thetas"],clusters):
-            np.testing.assert_allclose(c["weights"],list(report._s_to_a(*theta[6:9]))+[1-sum(report._s_to_a(*theta[6:9]))])
+            np.testing.assert_allclose(c["weights"],list(s_to_a(*theta[6:9]))+[1-sum(s_to_a(*theta[6:9]))])
             self.assertAlmostEqual(sum(c["weights"]),1)
         self.assertGreater(abs(clusters[1]["values"]["s2"]-clusters[1]["weights"][1]),.05)
 
     def test_raw_conversion_keeps_all_subjects_and_handles_nonfinite_logs(self):
-        raw=report.readable(self.result)
+        raw=readable(self.result)
         self.assertEqual(len(raw["subjects"]),1131)
         self.assertEqual(len(raw["ksi"]),1131)
         self.assertEqual(np.asarray(raw["resp"]).shape,(1131,2))
         self.assertEqual(raw["iter_log"][0]["improvement"],"Infinity")
-        json.loads(report.json_text(raw))
+        json.loads(json_text(raw))
         injected={"text":"</script><img src=x onerror=alert(1)>"}
-        self.assertNotIn("</script>",report.embed_json(injected))
-        self.assertEqual(json.loads(report.embed_json(injected)),injected)
+        self.assertNotIn("</script>",embed_json(injected))
+        self.assertEqual(json.loads(embed_json(injected)),injected)
 
     def test_fixed_parameters_do_not_count_as_boundary_warnings(self):
-        clusters=report.cluster_parameters(self.result,1e-4)
+        clusters=cluster_parameters(self.result,1e-4)
         for c in clusters:
             beta=next(p for p in c["parameters"] if p["name"]=="beta")
             self.assertEqual(beta["status"],"固定")
@@ -193,20 +203,21 @@ class ConditionalHTMLTests(unittest.TestCase):
             self.assertEqual(c["boundary_count"],sum(p["boundary"] is not None for p in c["parameters"]))
 
     def test_probability_screen_detects_nonmonotone_tk(self):
-        self.assertFalse(report.probability_shape("tk",.2)[0])
-        self.assertTrue(report.probability_shape("tk",.6)[0])
-        self.assertTrue(report.probability_shape("prelec",1e-6)[0])
+        self.assertFalse(probability_shape("tk",.2)[0])
+        self.assertTrue(probability_shape("tk",.6)[0])
+        self.assertTrue(probability_shape("prelec",1e-6)[0])
 
     def test_shared_scalar_audit_reproduces_saved_likelihood_and_posterior(self):
         # Audit the archived result against its original participant filter.
-        snapshot=report.ROOT/"results_grid_conditional/corrected_source_snapshot/data.py"
-        module_spec=importlib.util.spec_from_file_location("conditional_fixture_data",snapshot)
-        fixture_data=importlib.util.module_from_spec(module_spec)
-        module_spec.loader.exec_module(fixture_data)
-        observed, *_=fixture_data.process(export_excel=False)
-        data=report.prepare_grid_data(observed,report.f.transform(report.GlobalLottery))
-        clusters=report.cluster_parameters(self.result,1e-4)
-        fit=report.audit_result(self.result,data,clusters)
+        snapshot=ROOT/"results_grid_conditional/corrected_source_snapshot"
+        with patch.object(sys,"path",[str(snapshot),*sys.path]),patch.dict(sys.modules):
+            module_spec=importlib.util.spec_from_file_location("conditional_fixture_data",snapshot/"data.py")
+            fixture_data=importlib.util.module_from_spec(module_spec)
+            module_spec.loader.exec_module(fixture_data)
+            observed, *_=fixture_data.process(export_excel=False)
+        data=prepare_grid_data(observed,transform(LOTTERIES))
+        clusters=cluster_parameters(self.result,1e-4)
+        fit=audit_result(self.result,data,clusters)
         self.assertEqual(fit["status"],"verified")
         self.assertLess(abs(fit["ll_gap"]),1e-5)
         self.assertLess(fit["posterior_gap"],1e-7)

@@ -13,19 +13,21 @@ from unittest.mock import patch
 
 import numpy as np
 
-import functions as f
-import grid_em
-import profile_lambda as profile
-from GlobalSettings import GlobalLottery, GlobalPrelecBounds
-from main import get_observed_ce
-from model_spec import CANON, ModelSpec, init_free
+from estimation import em, profile
+from estimation.config import BOUNDS, LOTTERIES
+from estimation.data import observed_ce
+from estimation.likelihood import result_loglik
+from estimation.lottery_paths import transform
+from estimation.prepare import prepare_grid_data
+from estimation.spec import CANON, ModelSpec, expand_all, init_free, spec_cluster_layouts
+from scripts import run_profile
 
 
 def make_source(spec, subjects=("a", "b", "c", "d")):
-    layouts, identities = grid_em.spec_cluster_layouts(spec)
+    layouts, identities = spec_cluster_layouts(spec)
     rng = np.random.default_rng(57)
     vectors = [init_free(layout, rng) for layout in layouts]
-    thetas, deltas = grid_em._expand_all(vectors, layouts)
+    thetas, deltas = expand_all(vectors, layouts)
     return dict(spec=spec, layouts=layouts, rp_identities=identities,
         free_vecs=vectors, thetas=thetas, delta_les=deltas,
         pis=np.ones(spec.C) / spec.C, ksi=np.full(len(subjects), .2),
@@ -42,7 +44,7 @@ class ProfileLayoutTests(unittest.TestCase):
         target, grid = profile.resolve_target(self.source, 2, "lambda", [1., 8.])
         layouts, _ = profile.profile_layouts(self.spec, target, 8.)
         packed = profile.pack_initial(self.source, layouts, target)
-        thetas, _ = grid_em._expand_all(packed["free_vecs"], layouts)
+        thetas, _ = expand_all(packed["free_vecs"], layouts)
         self.assertEqual(thetas[2][3], 8.)
         for j in [0, 1, 3]:
             np.testing.assert_array_equal(thetas[j], self.source["thetas"][j])
@@ -65,7 +67,7 @@ class ProfileLayoutTests(unittest.TestCase):
         target, _ = profile.resolve_target(source, 0, "delta_le", [.4])
         layouts, _ = profile.profile_layouts(spec, target, .4)
         values = profile.pack_initial(source, layouts, target)
-        thetas, deltas = grid_em._expand_all(values["free_vecs"], layouts)
+        thetas, deltas = expand_all(values["free_vecs"], layouts)
         self.assertEqual(deltas[0], .4)
         self.assertTrue(layouts[1].has_delta_le)
         self.assertIn(CANON["prelec"]["DELTA"], layouts[0].free_positions)
@@ -82,7 +84,7 @@ class ProfileLayoutTests(unittest.TestCase):
         target, _ = profile.resolve_target(source, 0, "alpha_gain", [2.])
         layouts, _ = profile.profile_layouts(spec, target, 2.)
         packed = profile.pack_initial(source, layouts, target)
-        theta, _ = grid_em._expand_all(packed["free_vecs"], layouts)
+        theta, _ = expand_all(packed["free_vecs"], layouts)
         self.assertEqual(theta[0][1], 2.)
         self.assertEqual(theta[0][2], 2.)
 
@@ -94,18 +96,15 @@ class ProfileLayoutTests(unittest.TestCase):
             with self.subTest(name=name, grid=grid), self.assertRaises(ValueError):
                 profile.resolve_target(self.source, 0, name, grid)
 
-    def test_engine_functions_and_global_bounds_restore_after_exception(self):
-        original_layouts, original_bounds = grid_em.spec_cluster_layouts, grid_em.bounds_free
-        original_global = copy.deepcopy(GlobalPrelecBounds)
-        target, _ = profile.resolve_target(self.source, 1, "palpha")
-        layouts, identities = profile.profile_layouts(self.spec, target, .001)
-        with self.assertRaisesRegex(RuntimeError, "forced"):
-            with profile.constrained_engine(self.spec, layouts, identities, target):
-                self.assertIs(grid_em.spec_cluster_layouts(self.spec)[0], layouts)
-                raise RuntimeError("forced")
-        self.assertIs(grid_em.spec_cluster_layouts, original_layouts)
-        self.assertIs(grid_em.bounds_free, original_bounds)
-        self.assertEqual(GlobalPrelecBounds, original_global)
+    def test_constraints_leave_shared_layouts_and_bounds_unchanged(self):
+        original_bounds = copy.deepcopy(BOUNDS)
+        target, _ = profile.resolve_target(self.source, 1, "lambda", [8.])
+        layouts, _ = profile.profile_layouts(self.spec, target, 8.)
+        for layout in layouts:
+            profile.layout_bounds(layout, layouts[1], target)
+        self.assertNotIn(3, layouts[1].free_positions)
+        self.assertIn(3, spec_cluster_layouts(self.spec)[0][1].free_positions)
+        self.assertEqual(BOUNDS, original_bounds)
 
     def test_mixed_warm_start_alignment_keeps_noise_and_focal_identity(self):
         spec = ModelSpec("test1", "exp", "sepalpha", "commem", "prelec", "mixed", 2)
@@ -126,7 +125,7 @@ class ProfileLayoutTests(unittest.TestCase):
         self.assertTrue(diagnostic["component_switched"])
 
     def test_job_selection_skips_fixed_parameters_and_deduplicates_aliases(self):
-        args = profile.parse_args(["--parameters", "delta_pa", "delta_le", "psi", "--cluster", "LE"])
+        args = run_profile.parse_args(["--parameters", "delta_pa", "delta_le", "psi", "--cluster", "LE"])
         jobs, skipped = profile.choose_jobs(self.source, args)
         self.assertEqual(len(jobs), 1)
         self.assertEqual(jobs[0][0].cluster, 2)
@@ -158,15 +157,15 @@ class ProfileLayoutTests(unittest.TestCase):
 class ProfileEstimationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        y = get_observed_ce(export_excel=False)
+        y = observed_ce()
         subjects = sorted(y.participant_label.unique())[:4]
         cls.y = y[y.participant_label.isin(subjects)].copy()
-        cls.data = grid_em.prepare_grid_data(cls.y, f.transform(GlobalLottery))
+        cls.data = prepare_grid_data(cls.y, transform(LOTTERIES))
 
     def source(self, spec):
         source = make_source(spec, self.data.subjects)
         source["n_obs_effective"] = len(self.data.observed)
-        source["log_likelihood"], source["resp"] = profile.likelihood(source, self.data)
+        source["log_likelihood"], source["resp"] = result_loglik(source, self.data)
         return source
 
     def test_parallel_workers_pin_different_parameters_and_refit_nuisance(self):
@@ -184,7 +183,7 @@ class ProfileEstimationTests(unittest.TestCase):
         for result in results:
             self.assertFalse(np.array_equal(result["ksi"], source["ksi"]))
             self.assertAlmostEqual(result["pis"].sum(), 1.)
-            ll, posterior = profile.likelihood(result, self.data)
+            ll, posterior = result_loglik(result, self.data)
             self.assertAlmostEqual(ll, result["log_likelihood"], places=8)
             np.testing.assert_allclose(posterior, result["resp"])
 
@@ -193,7 +192,7 @@ class ProfileEstimationTests(unittest.TestCase):
         source = self.source(spec)
         target, _ = profile.resolve_target(source, 0, "lambda", [4.])
         profile.init_worker(self.data)
-        with patch.object(grid_em, "grid_em_mixture", side_effect=FloatingPointError("forced")):
+        with patch.object(em, "grid_em_mixture", side_effect=FloatingPointError("forced")):
             result = profile.fit_worker(spec, target, 4., None, source, 2, 1e-6)
         self.assertEqual(result["thetas"][0][3], 4.)
         self.assertEqual(result["exit_reason"], "feasible_initial")
@@ -211,8 +210,8 @@ class ProfileEstimationTests(unittest.TestCase):
             argv = ["--result", str(path), "--output-dir", str(output), "--parameters", "lambda",
                     "--grid", "1", "3", "--seeds", "0", "--warm-starts", "0",
                     "--max-iter", "2", "--n-workers", "2"]
-            with patch.object(profile, "get_observed_ce", return_value=self.y), redirect_stdout(io.StringIO()):
-                profile.main(argv)
+            with patch.object(run_profile, "observed_ce", return_value=self.y), redirect_stdout(io.StringIO()):
+                run_profile.main(argv)
             saved = output / "cluster_1_lambda"
             with (saved / "profile.csv").open() as handle:
                 rows = list(csv.DictReader(handle))
@@ -221,16 +220,16 @@ class ProfileEstimationTests(unittest.TestCase):
             self.assertTrue(summary["reference_dominates_grid"])
             self.assertTrue(all(row["reverse_done"] for row in [pickle.loads(p.read_bytes()) for p in saved.glob("point_*.pkl")]))
             mtimes = {p: p.stat().st_mtime_ns for p in saved.glob("*.pkl")}
-            with patch.object(profile, "get_observed_ce", return_value=self.y), \
+            with patch.object(run_profile, "observed_ce", return_value=self.y), \
                     patch.object(profile, "fit_candidates", side_effect=AssertionError("must resume")), \
                     redirect_stdout(io.StringIO()):
-                profile.main(argv)
+                run_profile.main(argv)
             self.assertEqual(mtimes, {p: p.stat().st_mtime_ns for p in mtimes})
             changed = argv.copy()
             changed[changed.index("3")] = "4"
-            with patch.object(profile, "get_observed_ce", return_value=self.y), redirect_stdout(io.StringIO()):
+            with patch.object(run_profile, "observed_ce", return_value=self.y), redirect_stdout(io.StringIO()):
                 with self.assertRaisesRegex(ValueError, "different protocol"):
-                    profile.main(changed)
+                    run_profile.main(changed)
 
 
 if __name__ == "__main__":

@@ -6,9 +6,11 @@ from tempfile import TemporaryDirectory
 
 import numpy as np
 
-from grid_em import spec_cluster_layouts, _expand_all
-from model_spec import ModelSpec, init_free
-from run_conditional_grid import initial_values, write_protocol
+from estimation.config import DATA_FILE
+from estimation.data import exclude_participants, observed_ce
+from estimation.spec import ModelSpec, expand_all, init_free, spec_cluster_layouts
+from estimation.store import input_differences, scientific_inputs, seal_protocol, sha256_file, write_protocol
+from estimation.warm_starts import initial_values
 
 
 class WarmStartTests(unittest.TestCase):
@@ -17,7 +19,7 @@ class WarmStartTests(unittest.TestCase):
                               "fixed_pure", 1, "SQ")
         layouts, _ = spec_cluster_layouts(self.spec)
         self.vectors = [init_free(layout, np.random.default_rng(42)) for layout in layouts]
-        thetas, deltas = _expand_all(self.vectors, layouts)
+        thetas, deltas = expand_all(self.vectors, layouts)
         self.result = dict(spec=self.spec, thetas=thetas, delta_les=deltas,
                            pis=np.array([1.]), subjects=["c", "a", "b"],
                            ksi=np.array([.3, .1, .2]))
@@ -82,6 +84,34 @@ class ProtocolRetryTests(unittest.TestCase):
             saved.write_bytes(b"existing estimation")
             write_protocol(output, protocol)
             self.assertEqual(saved.read_bytes(), b"existing estimation")
+
+
+class ProtocolInputTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.observed = observed_ce()
+
+    def test_fingerprint_covers_inputs_but_not_code_provenance(self):
+        protocol = dict(inputs=scientific_inputs(self.observed), seeds=[1, 2], tol=1e-6)
+        sealed = seal_protocol(protocol)
+        self.assertEqual(sealed["fingerprint"], seal_protocol(dict(protocol))["fingerprint"])
+        self.assertIn("package_sha256", sealed["provenance"])
+        changed = seal_protocol(dict(protocol, seeds=[1, 3]))
+        self.assertNotEqual(sealed["fingerprint"], changed["fingerprint"])
+
+    def test_likelihood_inputs_detect_a_different_sample(self):
+        protocol = dict(inputs=scientific_inputs(self.observed))
+        self.assertEqual(input_differences(protocol, self.observed), [])
+        dropped = exclude_participants(self.observed, self.observed.participant_label.iloc[:1])
+        self.assertEqual(input_differences(protocol, dropped), ["sample_sha256"])
+        bounds_only = dict(inputs=dict(protocol["inputs"], bounds="other"))
+        self.assertEqual(input_differences(bounds_only, self.observed), [])
+
+    def test_pre_refactor_protocols_compare_the_data_file(self):
+        current = {"source_hashes": {DATA_FILE.name: sha256_file(DATA_FILE), "functions.py": "old code"}}
+        self.assertEqual(input_differences(current, self.observed), [])
+        self.assertEqual(input_differences({"source_hashes": {DATA_FILE.name: "other"}}, self.observed),
+                         [DATA_FILE.name])
 
 
 if __name__ == "__main__":

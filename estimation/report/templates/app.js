@@ -122,7 +122,7 @@
     $("snapshot").textContent=`生成时间 ${DATA.generated_at} · 数据快照 ${DATA.input_dir}`;
     $("counts").innerHTML=card("全部 pickle",DATA.counts.total)+card("模型结果",DATA.counts.models,`其中等价标签 ${files.filter(f=>f.kind==="model"&&f.equivalent_to).length}`)+card("完成起点",DATA.counts.restarts)+card("转换失败",DATA.counts.errors)+["test1","test2","test3"].map((t,i)=>card(t.toUpperCase(),`${DATA.counts.tests[t]||0} / ${[64,64,16][i]}`,"已保存的模型标签")).join("");
     const integrity=files.filter(f=>f.audit_status==="verified"),maxgap=Math.max(0,...integrity.map(f=>Math.abs(f.ll_gap||0)));
-    $("integrity").textContent=`转换 ${DATA.counts.total-DATA.counts.errors}/${DATA.counts.total} 个文件；当前数据复算 ${integrity.length} 个，最大 |LL 复算差|=${fmt(maxgap,8)}。${DATA.source_matches?"估计源码／数据与目录协议一致。":"源码／数据与目录协议未确认一致，未使用不匹配的代码强行复算。"} 边界警示阈值 ${DATA.boundary_tolerance}；所有原始数组与日志保留在各详情页。`;
+    $("integrity").textContent=`转换 ${DATA.counts.total-DATA.counts.errors}/${DATA.counts.total} 个文件；当前数据复算 ${integrity.length} 个，最大 |LL 复算差|=${fmt(maxgap,8)}。${DATA.source_matches?"估计输入（数据、彩票、参数边界）与目录协议一致。":"估计输入与目录协议未确认一致，未用不匹配的输入强行复算。"} 边界警示阈值 ${DATA.boundary_tolerance}；所有原始数组与日志保留在各详情页。`;
     if(DATA.counts.errors||!DATA.source_matches)$("integrity").classList.add("warn");
     $("protocol").textContent=JSON.stringify(DATA.protocol,null,2);
     $("progress-only").innerHTML=DATA.progress_only.length?table(["文件","记录状态","迭代","记录 LL"],DATA.progress_only.map(p=>[esc(p.path),esc(p.status),fmt(p.iteration,0),fmt(p.log_likelihood)])):"没有仅进度记录。";

@@ -8,10 +8,12 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-import export_conditional_html as report
-import organize_reports
-import report_storage as storage
-import test_conditional_html_export as fixtures
+from estimation.report import organize as organize_reports, storage
+from estimation.report.export import DIAGNOSTIC_COLUMNS, PARAMETER_COLUMNS
+from estimation.report.html import write_html
+from estimation.report.serialize import json_text
+from estimation.report.summary import summarize
+from tests import test_conditional_html_export as fixtures
 
 
 class ReportStorageTests(unittest.TestCase):
@@ -19,7 +21,7 @@ class ReportStorageTests(unittest.TestCase):
         value={"raw":"参与者😀\n\"</script>"*1000,"numbers":[1e-30,1.2345678901234567],"nonfinite":"Infinity"}
         with TemporaryDirectory() as directory:
             root=Path(directory);bundles=storage.DataBundles(root,part_bytes=1024)
-            descriptor=bundles.add("record",report.json_text(value));bundles.close()
+            descriptor=bundles.add("record",json_text(value));bundles.close()
             self.assertGreater(len(descriptor["parts"]),1)
             self.assertTrue(all(p.stat().st_size<=1024 for p in root.rglob("*.js")))
             self.assertEqual(storage.read_bundle_value(root,"record",descriptor),value)
@@ -32,7 +34,7 @@ class ReportStorageTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             root=Path(directory);bundles=storage.DataBundles(root);descriptors={}
             for index in range(10_050):
-                descriptors[str(index)]=bundles.add(str(index),report.json_text({"value":index}))
+                descriptors[str(index)]=bundles.add(str(index),json_text({"value":index}))
             bundles.close()
             self.assertLess(storage.validate_report_tree(root)["files"],10)
             recovered=dict((key,json.loads(source)["value"]) for key,source in storage.iter_bundle_sources(root,descriptors))
@@ -90,25 +92,25 @@ class ReportStorageTests(unittest.TestCase):
             for language in ["zh","en"]:
                 root=reports/("explorer"+("_en" if language=="en" else ""));(root/"details").mkdir(parents=True)
                 result=fixtures.ReportLanguageTests.make_result()
-                summary,payload=report.summarize(result,Path("/inputs/result.pkl"),Path("/inputs"),{}, {},
+                summary,payload=summarize(result,Path("/inputs/result.pkl"),Path("/inputs"),{}, {},
                     {"data":None,"reason":"未找到目录估计协议"},1e-4,False,language)
                 summary.update(id="model",href="details/model.html",delta_bic=0,delta_ll=0)
                 payload.update(generated_at="original snapshot",boundary_tolerance=1e-4,language=language)
                 payload["fit"]={"status":"verified","ll_gap":0.,"posterior_gap":1e-14,"states":[{"ce":[1.2345678901234567]}]}
                 originals[language]=organize_reports.preserved_hash(payload)
-                report.write_html(root/summary["href"],"model",payload,"detail",language)
+                write_html(root/summary["href"],"model",payload,"detail",language)
                 catalog=dict(version="conditional_html_v1",language=language,files=[summary],input_dir="/inputs",generated_at="original snapshot",
                     counts=dict(total=1,models=1,restarts=0,errors=0,tests={"test1":1},progress_only=0),protocol={},source_matches=True,
                     source_differences=[],audit_mode="all",boundary_tolerance=1e-4,progress_only=[])
-                (root/"catalog.json").write_text(report.json_text(catalog))
-                (root/"manifest.json").write_text(report.json_text({"files":[{"path":"result.pkl","href":summary["href"]}],"errors":[]}))
-                for stem,columns in [("parameters",report.PARAMETER_COLUMNS),("diagnostics",report.DIAGNOSTIC_COLUMNS)]:
+                (root/"catalog.json").write_text(json_text(catalog))
+                (root/"manifest.json").write_text(json_text({"files":[{"path":"result.pkl","href":summary["href"]}],"errors":[]}))
+                for stem,columns in [("parameters",PARAMETER_COLUMNS),("diagnostics",DIAGNOSTIC_COLUMNS)]:
                     writer=storage.CSVParts(root,stem,columns)
                     if stem=="diagnostics":writer.add(summary)
                     writer.close()
                 if language=="zh":
                     orphan={**payload,"summary":{**summary,"id":"orphan","href":"details/orphan.html","kind":"restart"},"record":{"unlisted":"完整保留"}}
-                    report.write_html(root/"details/orphan.html","orphan",orphan,"detail",language)
+                    write_html(root/"details/orphan.html","orphan",orphan,"detail",language)
             with redirect_stdout(io.StringIO()):organize_reports.organize(reports)
             self.assertLess(storage.validate_report_tree(reports)["files"],100)
             for language in ["zh","en"]:

@@ -1,7 +1,7 @@
 """Figures for the results slides.
 
 Main results: exp/sepalpha/commem/TK after excluding top-endpoint responders
-(run_exclusion_check.py, results_grid_conditional_stricter_no_endpoint_tk_main).
+(scripts/run_exclusion.py, results_grid_conditional_stricter_no_endpoint_tk_main).
 Backup profile figures: full sample, Prelec.
 
     python slides/make_figures.py                 # PDF figures into slides/figures
@@ -22,14 +22,14 @@ from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.lines import Line2D
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))   # result pickles reference model_spec classes
-from model_spec import CANON  # noqa: E402
+sys.path.insert(0, str(ROOT))
+from estimation.spec import CANON  # noqa: E402
 
 MAIN = ROOT / "results_grid_conditional_stricter_no_endpoint_tk_main"
 PROFILES = ROOT / "profiles/results_grid_conditional_stricter/test3_exp_sepalpha_commem_prelec"
 BLUE, ORANGE, INK, MUTED, GRID, SHADE = "#2a78d6", "#eb6834", "#0b0b0b", "#52514e", "#e4e3de", "#f0efec"
 THRESHOLD = 1.92   # chi2(1) 95% quantile / 2; a heuristic only (boundary + mixture)
-EXCLUSION = .5     # run_exclusion_check.py default
+EXCLUSION = .5     # scripts/run_exclusion.py default
 
 plt.rcParams.update({
     "font.size": 8, "axes.labelsize": 8, "xtick.labelsize": 7, "ytick.labelsize": 7, "legend.fontsize": 7,
@@ -111,11 +111,10 @@ def palpha_profile(out, fmt):
 
 
 def screening(out, fmt):
-    import functions as f
-    from GlobalSettings import GlobalLottery
-    from main import get_observed_ce
-    from run_exclusion_check import endpoint_shares
-    shares = endpoint_shares(get_observed_ce(export_excel=False), f.transform(GlobalLottery)).to_numpy()
+    from estimation.config import LOTTERIES
+    from estimation.data import endpoint_shares, observed_ce
+    from estimation.lottery_paths import transform
+    shares = endpoint_shares(observed_ce(), transform(LOTTERIES)).to_numpy()
     edges = np.linspace(0, 1, 21)
     counts, _ = np.histogram(shares, bins=edges)
     fig, axis = plt.subplots(figsize=(3.4, 2.3))
