@@ -16,8 +16,11 @@ from .i18n import localize
 from .serialize import json_text, number, readable
 
 
-def amplitude_zero_limit(lamb, alpha_gain, alpha_loss):
-    """Right-hand limit of A(d)=lambda*d**(alpha_loss-alpha_gain), lambda>0."""
+def amplitude_zero_limit(lamb, alpha_gain, alpha_loss, utility="power"):
+    """Right-hand limit of A(d)=-u(-d)/u(d), lambda>0: for power utility
+    A(d)=lambda*d**(alpha_loss-alpha_gain); CARA utility is linear at 0, so lambda."""
+    if utility == "exponential":
+        return float(lamb)
     if alpha_loss > alpha_gain:
         return 0.0
     if alpha_loss < alpha_gain:
@@ -25,12 +28,12 @@ def amplitude_zero_limit(lamb, alpha_gain, alpha_loss):
     return float(lamb)
 
 
-def utility_curve(values, extent=100):
-    """Reference-centered power utility, sampled densely around zero."""
+def utility_curve(values, extent=100, utility="power"):
+    """Reference-centered utility, sampled densely around zero."""
     positive = np.geomspace(extent*1e-6, extent, 201)
     offsets = np.concatenate((-positive[::-1], [0.0], positive))
     utility = np.array([cpt.u(z, R=0, alpha=values["alpha_gain"],
-        alpha_loss=values["alpha_loss"], lamb=values["lambda"]) for z in offsets])
+        alpha_loss=values["alpha_loss"], lamb=values["lambda"], utility=utility) for z in offsets])
     return offsets, utility
 
 
@@ -45,6 +48,7 @@ def _boundary_side(value, bound, tolerance):
 
 def cluster_parameters(result, tolerance, language="zh"):
     method = result["spec"].pw
+    utility = result["spec"].utility
     ix = CANON[method]
     resp = np.asarray(result["resp"], dtype=float)
     clusters = []
@@ -83,11 +87,12 @@ def cluster_parameters(result, tolerance, language="zh"):
         clusters.append(dict(cluster=j+1, label=label, pi=float(result["pis"][j]),
             soft_n=float(resp[:, j].sum()), map_n=int(np.sum(resp.argmax(axis=1) == j)),
             parameters=params, values=values, weights=weights, effective_delta_le=effective_le,
-            free_vec=readable(fv), method=method, probability_parameter=parameter,
+            free_vec=readable(fv), method=method, utility=utility, probability_parameter=parameter,
             monotone=monotone, derivative_numerator_min=minimum,
             near_zero_prelec=method == "prelec" and parameter-1e-6 <= tolerance,
             boundary_count=sum(p["boundary"] is not None for p in params),
-            amplitude_zero_limit=amplitude_zero_limit(values["lambda"], values["alpha_gain"], values["alpha_loss"])))
+            amplitude_zero_limit=amplitude_zero_limit(values["lambda"], values["alpha_gain"],
+                                                      values["alpha_loss"], utility)))
     for cluster in clusters:
         for parameter in cluster["parameters"]:
             for key in ["status", "boundary"]:
@@ -132,7 +137,7 @@ def audit_result(result, data, clusters):
     including the actual decision weights of every conditional lottery."""
     if result["subjects"] != data.subjects:
         raise ValueError("参与者集合与当前数据不一致")
-    method = result["spec"].pw
+    method, utility_family = result["spec"].pw, result["spec"].utility
     state_mu = np.empty((len(data.states), len(clusters)))
     references = np.empty_like(state_mu)
     for j, (theta, dle, cluster) in enumerate(zip(result["thetas"], result["delta_les"], clusters)):
@@ -142,7 +147,7 @@ def audit_result(result, data, clusters):
         minimum = np.inf
         negative_states = 0
         for i, (_, current) in enumerate(data.states):
-            state_mu[i, j], ev = scalar_ce(v, float(rr[i]), current, method)
+            state_mu[i, j], ev = scalar_ce(v, float(rr[i]), current, method, utility_family)
             outcomes = defaultdict(float)
             for utility, p in zip(ev["present_values_of_streams"], ev["probabilities_of_streams"]):
                 outcomes[utility] += p
@@ -232,7 +237,7 @@ def summarize(result, path, input_dir, meta, protocol, context, tolerance, do_au
     subject_hash = hashlib.sha256(json_text(result["subjects"]).encode()).hexdigest()[:16]
     group = f"{fingerprint}|{version}|{n_obs}|{subject_hash}|{spec['test']}"
     brief = [{key: c.get(key) for key in ["cluster", "label", "pi", "soft_n", "map_n", "weights", "values",
-        "method", "probability_parameter", "monotone", "near_zero_prelec", "boundary_count", "amplitude_zero_limit",
+        "method", "utility", "probability_parameter", "monotone", "near_zero_prelec", "boundary_count", "amplitude_zero_limit",
         "min_decision_weight", "negative_states"]} for c in clusters]
     summary = dict(config_id=result["spec"].config_id(), kind=kind, restart_id=result.get("restart_id"),
         path=str(path.relative_to(input_dir)), spec=spec, ll=ll, bic=number(bic), aic=2*k-2*ll, k=k,

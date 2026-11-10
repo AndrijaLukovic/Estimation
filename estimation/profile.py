@@ -19,7 +19,7 @@ import numpy as np
 from scipy.optimize import linear_sum_assignment
 
 from . import em
-from .config import KSI_BOUNDS, ROOT, VALUATION_VERSION
+from .config import KSI_BOUNDS, VALUATION_VERSION
 from .diagnostics import probability_valid
 from .likelihood import result_loglik
 from .spec import CANON, bounds_free, expand_all, param_names_free, spec_cluster_layouts
@@ -40,6 +40,9 @@ GRIDS = {
     "s2": [0., .1, .25, .5, .75, .9, 1.],
     "s3": [0., .1, .25, .5, .75, .9, 1.],
 }
+# Exponential (CARA) utility: absolute risk-aversion coefficients, any sign.
+CARA_GRID = [-.3, -.1, -.05, -.02, -.01, -.005, -.002, -.001, -.0005, 0.,
+             .0005, .001, .002, .005, .01, .02, .05, .1, .2, .3]
 POSITIONS = dict(r="R", alpha_gain="AG", alpha_loss="AL", **{"lambda": "LAM"},
                  palpha="PALPHA", gamma="GAM", psi="PSI", delta_pa="DELTA",
                  delta_le="DELTA", s1="S1", s2="S2", s3="S3")
@@ -82,12 +85,14 @@ def resolve_target(result, cluster, name, custom_grid=None):
         if name == "delta_le":
             name = "delta_pa"   # common memory: avoid duplicate profiles
     original_bound = tuple(map(float, bounds_free(layout)[free_index]))
-    grid = sorted(set(map(float, custom_grid if custom_grid is not None else GRIDS[name])) | {source_value})
+    cara = layout.utility == "exponential" and name in {"alpha_gain", "alpha_loss"}
+    default_grid = CARA_GRID if cara else GRIDS[name]
+    grid = sorted(set(map(float, custom_grid if custom_grid is not None else default_grid)) | {source_value})
     if not grid or not np.isfinite(grid).all():
         raise ValueError("Profile grid must contain finite numbers")
     for value in grid:
-        positive = name in {"lambda", "alpha_gain", "alpha_loss", "palpha", "gamma", "psi"}
-        if (positive and value <= 0) or (not positive and value < 0):
+        positive = name in {"lambda", "alpha_gain", "alpha_loss", "palpha", "gamma", "psi"} and not cara
+        if (positive and value <= 0) or (not positive and not cara and value < 0):
             raise ValueError(f"Invalid {name} grid value: {value}")
         if name in {"palpha", "gamma", "psi", "delta_pa", "delta_le", "s1", "s2", "s3"} and value > 1:
             raise ValueError(f"{name} grid must not exceed 1")
@@ -395,4 +400,6 @@ def default_output(path, source, jobs):
     selection = "__".join(f"c{target.cluster + 1}_{target.name}" for target, _ in jobs)
     if len(selection) > 100:
         selection = "selection_" + hashlib.sha256(selection.encode()).hexdigest()[:12]
-    return ROOT / "profiles" / path.parent.parent.name / source["spec"].config_id() / selection
+    # profiles/ next to the grid directory: results/<sample>/profiles/<grid>/<model>/<selection>
+    grid = path.parent.parent
+    return grid.parent / "profiles" / grid.name / source["spec"].config_id() / selection

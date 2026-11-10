@@ -15,14 +15,14 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from estimation.config import ROOT  # noqa: E402
+from estimation.config import RESULTS  # noqa: E402
 from estimation.report.export import default_output_dir, export  # noqa: E402
 from estimation.report.i18n import localize  # noqa: E402
 
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--input-dir", type=Path, default=ROOT/"results_grid_conditional")
+    parser.add_argument("--input-dir", type=Path, default=RESULTS/"sample_original"/"grid_20seeds")
     parser.add_argument("--language", "--lang", choices=["zh", "en"], default="zh",
         help="report language (default: zh); English uses a separate default output directory")
     parser.add_argument("--output-dir", type=Path,

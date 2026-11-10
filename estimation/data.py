@@ -1,4 +1,6 @@
 """Observed certainty equivalents: load and clean the experiment data, filter samples."""
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
@@ -83,3 +85,25 @@ def endpoint_shares(observed, lotteries):
 
 def exclude_participants(observed, participants):
     return observed[~observed.participant_label.isin(participants)]
+
+
+def exclusions(observed, lotteries=None, endpoint_share=None, files=()):
+    """Participants to drop and why, one row per participant: a top-endpoint
+    share of at least ``endpoint_share`` (needs ``lotteries``), and/or being
+    listed in a CSV file with a participant_label column (any rule decided
+    outside the model, e.g. page times). in_sample marks listed labels that
+    occur in ``observed``."""
+    reasons = {}
+    if endpoint_share is not None:
+        shares = endpoint_shares(observed, lotteries)
+        for label in shares.index[shares >= endpoint_share]:
+            reasons.setdefault(label, []).append(f"top-endpoint share {shares[label]:.3f}")
+    for path in files:
+        listed = pd.read_csv(path, dtype=str)["participant_label"].dropna().str.strip()
+        for label in listed.unique():
+            reasons.setdefault(label, []).append(f"listed in {Path(path).name}")
+    present = set(observed.participant_label)
+    return pd.DataFrame(dict(participant_label=list(reasons), reason=["; ".join(r) for r in reasons.values()],
+                             in_sample=[label in present for label in reasons]),
+                        columns=["participant_label", "reason", "in_sample"]).astype({"in_sample": bool}) \
+        .sort_values("participant_label", ignore_index=True)

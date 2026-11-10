@@ -11,12 +11,12 @@ pilot.xlsx
 /__pycache__/
 *.pyc
 *.txt
-/results_grid/
 /reports
 /.reports-organize-*/
 /reports/grid_em_conditional_explorer_en/
-/results_grid_conditional/
-/results_grid_conditional_100/
-/results_grid_conditional_stricter/
-/results_grid_conditional_stricter_no_endpoint*/
-/profiles
+# Estimation results: data ignored; the index and about.txt notes are tracked
+/results/**
+!/results/**/
+!/results/README.md
+!/results/catalog.csv
+!/results/**/about.txt

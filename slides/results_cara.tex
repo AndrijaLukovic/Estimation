@@ -1,0 +1,359 @@
+% CARA utility pages: same sample and protocol as results.tex (exp / sepalpha / commem / TK, 851 participants
+% after screening out top-endpoint responders, lambda <= 20, gamma >= 0.28), exponential (CARA) utility.
+% Estimates: results/sample_stricter_no_endpoint/cara_sepalpha_tk_wide (alpha in [-0.3, 0.3]);
+%   power comparison: results/sample_stricter_no_endpoint/tk_lam20_g028_main;
+%   full sample: results/sample_stricter/cara_sepalpha_tk_wide and results/sample_stricter/grid (power, lambda <= 6, gamma >= 0.2);
+%   alpha-bound backup: results/sample_stricter_no_endpoint/cara_sepalpha_tk (alpha <= 0.01) and 13-start scratch fits.
+% Figures: python slides/make_figures.py --only cara  (writes slides/figures/cara_*.pdf)
+% Compile: pdflatex results_cara.tex  (run inside slides/). The frames can also be pasted into results.tex.
+\documentclass[aspectratio=169,11pt]{beamer}
+
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+
+\definecolor{accent}{HTML}{2A78D6}
+\definecolor{ink}{HTML}{0B0B0B}
+\definecolor{muted}{HTML}{52514E}
+
+\usetheme{default}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
+\setbeamertemplate{itemize items}[circle]
+\setbeamercolor{normal text}{fg=ink}
+\setbeamercolor{structure}{fg=accent}
+\setbeamercolor{frametitle}{fg=ink}
+\setbeamercolor{title}{fg=ink}
+\setbeamercolor{subtitle}{fg=muted}
+\setbeamerfont{frametitle}{series=\bfseries}
+\setbeamerfont{title}{series=\bfseries}
+
+\graphicspath{{figures/}}
+
+\newcommand{\ap}{\alpha^{+}}
+\newcommand{\am}{\alpha^{-}}
+\newcommand{\bd}{\ensuremath{^{\dagger}}}
+\newcommand{\tabnote}[1]{\par\vfill{\scriptsize\color{muted}#1\par}}
+\newcommand{\tight}{\setlength{\itemsep}{3pt}}
+\newcommand{\rp}[1]{\rho^{#1}}
+
+\title{Estimation Results: CARA Utility}
+\subtitle{Same sample and protocol as the main results, with exponential instead of power utility}
+\date{}
+
+\begin{document}
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+% ---------------------------------------------------------------------------
+\begin{frame}{CARA utility: what changes}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{0.53\textwidth}
+\textbf{Value function}
+\begin{itemize}\small\tight
+  \item Gains $\dfrac{1-e^{-\ap z}}{\ap}$, losses $-\lambda\,\dfrac{1-e^{-\am z}}{\am}$, with $z=|x-R|$ (linear at $\alpha=0$)
+  \item $\alpha$ is absolute risk aversion per \pounds: $\ap>0$ is risk averse over gains, $\am>0$ risk seeking over losses
+  \item $\ap,\am\in[-0.3,\,0.3]$: about the widest range floating point allows at the largest stakes
+  \item Everything else as in the main specification: same 851 participants, reference points, discounting, $\gamma\ge 0.28$, $\lambda\le 20$, 100 random + warm starts
+\end{itemize}
+\end{column}
+\begin{column}{0.43\textwidth}
+\textbf{Reading the curvature}
+\begin{itemize}\small\tight
+  \item Risk premium $\rho(x)=\dfrac{EV-CE}{|EV|}$ of a 50/50 gamble between \pounds 0 and $\pm$\pounds$x$, from the utility alone (no probability weighting; $\lambda$ cancels)
+  \item $\rho>0$: risk averse; $\rho<0$: risk seeking
+  \item Power: the same $\rho$ at every stake. CARA: $|\rho|\approx|\alpha|\,x/4$ grows with the stake
+  \item Loss aversion $A(x)=-u(-x)/u(x)$ as before
+\end{itemize}
+\end{column}
+\end{columns}
+\tabnote{Remaining payoffs range from $-$\pounds 2{,}010 to \pounds 2{,}155 (median spread \pounds 52); $\exp(\alpha z)$ overflows beyond $|\alpha|\approx 0.33$ at these stakes. Only exponential discounting is estimated under CARA.}
+\end{frame}
+
+% ---------------------------------------------------------------------------
+\begin{frame}{Power vs.\ CARA: model fit (same sample and protocol)}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{0.57\textwidth}
+\centering\footnotesize\setlength{\tabcolsep}{4pt}
+\begin{tabular}{cl r rr r}
+\toprule
+Test & Model & $k$ & Power & CARA & $\Delta$BIC\\
+\midrule
+2 & Pure SQ & 5 & 151{,}579.8 & 151{,}568.8 & $-11.0$\\
+2 & Pure PA & 6 & 151{,}566.0 & 151{,}553.1 & $-12.8$\\
+2 & Pure LE & 6 & 151{,}596.8 & 151{,}584.7 & $-12.2$\\
+2 & Pure FE & 5 & 151{,}923.7 & 152{,}006.1 & $+82.3$\\
+\midrule
+1 & $C=1$ & 9 & 151{,}585.8 & 151{,}582.0 & $-3.7$\\
+1 & $C=2$ & 19 & 150{,}393.7 & 150{,}382.1 & $-11.6$\\
+1 & $C=3$ & 29 & 149{,}878.5 & 149{,}864.2 & $-14.3$\\
+1 & $C=4$ & 39 & 149{,}484.0 & 149{,}444.8 & $-39.2$\\
+\midrule
+3 & Types & 25 & 149{,}441.6 & \textbf{149{,}424.3} & $-17.2$\\
+\bottomrule
+\end{tabular}
+\end{column}
+\begin{column}{0.40\textwidth}
+\begin{itemize}\small\tight
+  \item Same $k$, so $\Delta$BIC $=-2\,\Delta$LL: CARA gains 2--20 log-lik.\ points; pure FE loses 41
+  \item Heterogeneity still dominates: four classes vs.\ one gain 1{,}213 log-lik.\ (power: 1{,}195)
+  \item Test 3 has the lowest BIC under both utilities, but its lead over Test 1 ($C=4$) shrinks from 42.4 to 20.5
+\end{itemize}
+\end{column}
+\end{columns}
+\tabnote{BIC; $\Delta$BIC $=$ CARA $-$ power, negative favours CARA. $k$: structural parameters and mixing weights; the 851 noise parameters $\xi_i$ also enter the BIC. $n=15{,}317$.}
+\end{frame}
+
+% ---------------------------------------------------------------------------
+\begin{frame}{CARA: Test 1 ($C=1$) v.s. Test 2}
+{\centering\footnotesize
+\begin{tabular}{l rrrr r}
+\toprule
+& \multicolumn{4}{c}{Test 2: pure reference point} & Test 1\\
+\cmidrule(lr){2-5}
+& SQ & PA & LE & FE & free mix\\
+\midrule
+Log-lik. & $-71{,}659.9$ & $\mathbf{-71{,}647.2}$ & $-71{,}663.0$ & $-71{,}878.5$ & $-71{,}647.2$\\
+$10^{3}\ap$ & $-0.39$ & $-0.39$ & $-0.42$ & 13.70 & $-0.39$\\
+$10^{3}\am$ & $-0.04$ & $-0.02$ & $-0.08$ & 6.86 & $-0.02$\\
+$\lambda$ & 1.196 & 1.205 & 1.200 & 0.792 & 1.205\\
+$A(20)$ & 1.19 & 1.20 & 1.20 & 0.85 & 1.20\\
+$\gamma$ & 0.591 & 0.591 & 0.594 & 0.479 & 0.591\\
+$\delta$ & -- & 0.669 & 1.000\bd & -- & 0.666\\
+$\rp{+}(100)$ & $-1.0\%$ & $-1.0\%$ & $-1.1\%$ & $+31.9\%$ & $-1.0\%$\\
+$\rp{-}(100)$ & $+0.1\%$ & $+0.1\%$ & $+0.2\%$ & $-16.8\%$ & $+0.1\%$\\
+RP weights & & & & & $(.00,1.00,.00,.00)$\\
+\bottomrule
+\end{tabular}\par}
+\begin{itemize}\small\tight
+  \item One agent: utility almost linear ($|\rho|\le 1.1\%$ at \pounds 100), so risk attitude comes from $\gamma\approx 0.59$ and $\lambda\approx 1.2$; the free mix collapses to pure PA (power: PA 0.78 + FE 0.22)
+\end{itemize}
+\tabnote{\bd\ hitting the boundary. $r$ at its lower bound except under pure FE (0.048). $\rp{\pm}(100)$: risk premium of a 50/50 gamble between \pounds 0 and $\pm$\pounds 100. RP weights: SQ, PA, LE, FE.}
+\end{frame}
+
+% ---------------------------------------------------------------------------
+\begin{frame}{CARA Test 1: four latent classes with free reference-point weights}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{0.47\textwidth}
+\centering\footnotesize\setlength{\tabcolsep}{4pt}\renewcommand{\arraystretch}{0.95}
+\begin{tabular}{l rrrr}
+\toprule
+Class & 1 & 2 & 3 & 4\\
+Share $\pi$ & 45.0\% & 22.7\% & 19.7\% & 12.6\%\\
+\midrule
+$a_{SQ}$ & 0.019 & 0.000 & 0.000 & 0.000\\
+$a_{PA}$ & 0.001 & 0.000 & 0.311 & \textbf{0.660}\\
+$a_{LE}$ & 0.162 & 0.024 & 0.301 & 0.000\\
+$a_{FE}$ & \textbf{0.819} & \textbf{0.976} & 0.389 & 0.340\\
+$\delta$ & 0.200\bd & 0.550 & 1.000\bd & 0.913\\
+\midrule
+$10^{3}\ap$ & $-1.86$ & $-0.36$ & $-0.32$ & $-1.94$\\
+$10^{3}\am$ & $-3.05$ & $-0.71$ & \textbf{88.4} & 1.17\\
+$\lambda$ & 1.367 & 0.921 & 5.692 & 12.512\\
+$\gamma$ & 0.451 & 0.902 & 0.670 & 0.289\\
+$A(5)$ & 1.37 & 0.92 & 4.60 & 12.42\\
+$A(50)$ & 1.41 & 0.93 & 1.26 & 11.57\\
+$\rp{+}(100)$ & $-4.6\%$ & $-0.9\%$ & $-0.8\%$ & $-4.8\%$\\
+$\rp{-}(100)$ & $+7.6\%$ & $+1.8\%$ & $\mathbf{-84.3\%}$ & $-2.9\%$\\
+\bottomrule
+\end{tabular}
+\end{column}
+\begin{column}{0.49\textwidth}
+\begin{itemize}\small\tight
+  \item \textbf{Two FE classes} (68\%): class 1 FE with some LE; class 2 pure FE and close to expected value ($\gamma=0.90$, $A\approx 0.9$)
+  \item \textbf{PA class} (class 4, 13\%): high loss aversion ($A\approx 12$) and $\gamma$ at the TK limit
+  \item \textbf{Mixed class} (class 3, 20\%): no dominant reference point; strongly risk seeking over losses
+  \item Population RP weights: SQ $0.01$, PA $0.14$, LE $0.14$, FE $0.71$ (power: $0.07$, $0.26$, $0.21$, $0.46$)
+  \item The shares are not pinned down: another start reaches a higher log-lik.\ with different shares (backup)
+\end{itemize}
+\end{column}
+\end{columns}
+\tabnote{\bd\ at an estimation bound. $\alpha$ per \pounds; $r\le 0.003$ in all classes. Classes numbered by share.}
+\end{frame}
+
+% ---------------------------------------------------------------------------
+\begin{frame}{CARA Test 3: four pure reference-point types (lowest BIC)}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{0.45\textwidth}
+\centering\footnotesize\setlength{\tabcolsep}{4pt}
+\begin{tabular}{l rrrr}
+\toprule
+Type & SQ & PA & LE & FE\\
+\midrule
+Share $\pi$ & 15.0\% & 12.8\% & \textbf{54.2\%} & 18.0\%\\
+Modal $n$ & 122 & 107 & 490 & 132\\
+\midrule
+$10^{3}\ap$ & $-0.95$ & $-0.92$ & $-0.67$ & $-0.43$\\
+$10^{3}\am$ & \textbf{82.5} & 0.29 & $-1.68$ & $-0.66$\\
+$\lambda$ & 3.961 & 3.194 & 1.203 & 0.955\\
+$\gamma$ & 0.640 & 0.288 & 0.567 & 0.967\\
+$\delta$ & -- & 0.838 & 0.200\bd & --\\
+$A(5)$ & 3.24 & 3.18 & 1.21 & 0.96\\
+$A(20)$ & 1.92 & 3.16 & 1.21 & 0.96\\
+$A(50)$ & 0.92 & 3.10 & 1.23 & 0.96\\
+$\rp{+}(100)$ & $-2.4\%$ & $-2.3\%$ & $-1.7\%$ & $-1.1\%$\\
+$\rp{-}(100)$ & $\mathbf{-83.2\%}$ & $-0.7\%$ & $+4.2\%$ & $+1.7\%$\\
+\bottomrule
+\end{tabular}
+\end{column}
+\begin{column}{0.51\textwidth}
+\begin{itemize}\small\tight
+  \item \textbf{LE} (54\%): almost linear utility and mild loss aversion ($A\approx 1.2$)
+  \item \textbf{SQ} (15\%): strongly risk seeking over losses ($\rp{-}=-37\%$ already at \pounds 20); 54\% of its loss-lottery CEs are top-of-list answers (PA 48\%, LE and FE 12\%)
+  \item \textbf{PA} (13\%): $\gamma$ at the TK limit as under power; $A\approx 3.2$ at every stake
+  \item \textbf{FE} (18\%): close to expected value ($\alpha^{\pm}\approx 0$, $\gamma=0.97$, $A\approx 1$)
+  \item Classification: mean maximum posterior 0.86; 98\% above 0.5
+\end{itemize}
+\end{column}
+\end{columns}
+\tabnote{\bd\ at an estimation bound. $\alpha$ per \pounds. $\delta$ is not identified for the SQ and FE types; $r\le 0.001$ for all types. Top-of-list: CE equal to the best remaining outcome.}
+\end{frame}
+
+% ---------------------------------------------------------------------------
+\begin{frame}{CARA: risk attitude by stake, Test 3 types}
+\begin{columns}[c,onlytextwidth]
+\begin{column}{0.58\textwidth}
+\centering
+\includegraphics[width=\linewidth]{cara_risk_premium.pdf}
+\end{column}
+\begin{column}{0.39\textwidth}
+\begin{itemize}\small\tight
+  \item \textbf{Gains:} every type is mildly risk seeking: $-1.1\%$ to $-2.4\%$ at \pounds 100, $-5\%$ to $-12\%$ at \pounds 500
+  \item \textbf{Losses:} SQ is strongly risk seeking; LE and FE become risk averse at large stakes ($+20\%$ and $+8\%$ at \pounds 500); PA is close to neutral
+  \item Utility only: probability weighting comes on top, and gives PA most of its risk attitude ($\gamma=0.29$)
+\end{itemize}
+\end{column}
+\end{columns}
+\tabnote{$\rho(x)=(EV-CE)/|EV|$ of a 50/50 gamble between \pounds 0 and $\pm$\pounds$x$, from each type's $\ap$ or $\am$; $\lambda$ cancels. Under power utility each curve would be a flat line.}
+\end{frame}
+
+% ---------------------------------------------------------------------------
+\begin{frame}{CARA: cross-test comparisons}
+\begin{columns}[c,onlytextwidth]
+\begin{column}{0.52\textwidth}
+\centering
+\includegraphics[width=\linewidth]{cara_crosstab_test1_test3.pdf}
+\end{column}
+\begin{column}{0.45\textwidth}
+\begin{itemize}\small\tight
+  \item \textbf{The four groups still match:} 88\% of participants (745 of 851) fall in the corresponding class and type (power: 93\%)
+  \item \textbf{FE and PA} are pure reference points in both tests
+  \item \textbf{LE and SQ} again come from the pure-type restriction: the LE type is the FE-dominated class 1 ($a_{LE}=0.16$), and the SQ type is the mixed class 3 ($a_{SQ}=0$)
+\end{itemize}
+\end{column}
+\end{columns}
+\tabnote{Counts of participants by modal posterior class in each model; $n=851$. Classes numbered by share, as on the CARA Test 1 slide; a class is labelled by its largest RP weight if that is at least 0.6.}
+\end{frame}
+
+% ---------------------------------------------------------------------------
+\begin{frame}{Power vs.\ CARA: who is which type}
+\begin{columns}[c,onlytextwidth]
+\begin{column}{0.48\textwidth}
+\centering
+\includegraphics[width=0.92\linewidth]{cara_crosstab_utility.pdf}
+\end{column}
+\begin{column}{0.49\textwidth}
+\begin{itemize}\small\tight
+  \item \textbf{Only PA keeps its label:} 105 of the 115 power PA types are CARA PA types
+  \item \textbf{The other labels move:} power FE $\to$ CARA LE (238 of 247); power SQ $\to$ CARA FE (111 of 142); power LE splits into CARA LE (217) and SQ (116)
+  \item Same label for 39\% of participants; the same grouping, ignoring labels, for 67\%
+  \item So the SQ, LE and FE labels depend on the utility family; the PA type does not
+\end{itemize}
+\end{column}
+\end{columns}
+\tabnote{Counts of participants by modal posterior type in each Test 3 fit; $n=851$. ``Same grouping'': best one-to-one matching of power to CARA types (SQ$\to$FE, PA$\to$PA, LE$\to$SQ, FE$\to$LE).}
+\end{frame}
+
+% ---------------------------------------------------------------------------
+\begin{frame}{Full sample (1{,}081): CARA's top-of-list corner type}
+\begin{columns}[T,onlytextwidth]
+\begin{column}{0.50\textwidth}
+\centering\footnotesize\setlength{\tabcolsep}{4pt}
+\begin{tabular}{l rr}
+\toprule
+& Test 3 & Test 1, $C=4$\\
+\midrule
+BIC, power & 190{,}426.6 & 190{,}440.7\\
+BIC, CARA & 189{,}838.5 & 189{,}898.8\\
+\midrule
+$\Delta$LL, CARA $-$ power & 294.1 & 271.0\\
+\quad kept 851 & 23.9 & 60.6\\
+\quad top-of-list 230 & \textbf{270.1} & \textbf{210.4}\\
+\bottomrule
+\end{tabular}
+
+\vspace{8pt}
+\begin{tabular}{l r}
+\toprule
+\multicolumn{2}{l}{CARA Test 3, FE type}\\
+\midrule
+Share $\pi$ / modal $n$ & 11.3\% / 116\\
+Top-of-list share & $\ge 50\%$ for all, mean 84\%\\
+$\ap$ / $\am$ & $-0.300$\bd\ / 0.291\\
+$\lambda$ / $\gamma$ & 0.000\bd\ / 0.870\\
+\bottomrule
+\end{tabular}
+\end{column}
+\begin{column}{0.47\textwidth}
+\begin{itemize}\small\tight
+  \item 92\% of CARA's full-sample gain in Test 3 (270 of 294 log-lik.) comes from the 230 top-of-list participants
+  \item 116 of them form the FE type: $\ap$ at its lower bound and $\lambda\to 0$, so convex gains push the CE to the best outcome and losses do not count; 77 more sit in the SQ type
+  \item The bound cannot be widened ($|\alpha|<0.33$ in floating point); the FE type's $\rho^{\pm}(100)\approx-95\%$ describes the answer pattern, not risk preference
+  \item Under power, 160 of them form the $\ap=5$, $\lambda=6$ corner, also at the bounds
+\end{itemize}
+\end{column}
+\end{columns}
+\tabnote{Kept: the 851 participants of the main results; top-of-list: the 230 screened out. $\Delta$LL split by participant within the same fits. Full-sample power fits use the earlier bounds $\lambda\le 6$, $\gamma\ge 0.2$; a power run with $\lambda\le 20$, $\gamma\ge 0.28$ on this sample is not available yet.}
+\end{frame}
+
+% ===========================================================================
+\appendix
+
+\begin{frame}{Backup: CARA optimisation diagnostics}
+{\centering\footnotesize
+\begin{tabular}{l ccc c}
+\toprule
+& \multicolumn{3}{c}{Starts within $x$ of the best log-lik.} & \\
+\cmidrule(lr){2-4}
+Model & $x=0.01$ & $x=1$ & $x=10$ & Starts\\
+\midrule
+Test 2 (each RP) & 32--101 & 101 & 101 & 101\\
+Test 1, $C=1$ & 9 & 13 & 14 & 101\\
+Test 1, $C=2$ & 6 & 59 & 68 & 102\\
+Test 1, $C=3$ & 1 & 4 & 8 & 103\\
+Test 1, $C=4$ & 1 & 1 & 12 & 105\\
+Test 3 & 1 & 2 & 3 & 101\\
+\bottomrule
+\end{tabular}\par}
+\begin{itemize}\small\tight
+  \item All fits converged (log-lik.\ change $<10^{-6}$); the best Test 3 fit comes from the warm start (the fit with $\alpha\le 0.01$); one random start reaches the same solution (0.01 lower, same shares)
+  \item $C=4$: a separate start reached a log-lik.\ 0.86 higher, with shares 36/34/18/11\% instead of 45/23/20/13\%, so the split between classes is not pinned down
+  \item At bounds: no $\alpha$, $\lambda$ or $\gamma$; $\delta$ in several classes; $r$ at its lower bound in most classes (largest: 0.048, pure FE)
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Backup: the upper bound on $\alpha$}
+{\centering\footnotesize
+\begin{tabular}{l rr r r}
+\toprule
+Upper bound on $\ap,\am$ & Test 3 BIC & Test 1 ($C=4$) BIC & SQ type $\am$ & Starts\\
+\midrule
+0.01 & 149{,}710.1 & \textbf{149{,}536.3} & 0.010\bd & 100 + warm\\
+0.03 & 149{,}544.9 & \textbf{149{,}536.3} & 0.030\bd & 13\\
+0.1 & \textbf{149{,}424.3} & 149{,}456.9 & 0.083 & 13\\
+0.3 (main) & \textbf{149{,}424.3} & 149{,}444.8 & 0.083 & 100 + warm\\
+\bottomrule
+\end{tabular}\par}
+\begin{itemize}\small\tight
+  \item With $\alpha\le 0.01$ or $0.03$ the SQ type sits on the bound and Test 1 ($C=4$) has the lower BIC
+  \item Once $\am$ can reach 0.083, Test 3 overtakes; beyond 0.1 nothing changes
+  \item The lower bound $-0.3$ does not bind on the screened sample (it does in the full sample)
+\end{itemize}
+\tabnote{Bold: lower BIC of the two tests. The 0.03 and 0.1 rows are 13-start checks, not full runs.}
+\end{frame}
+
+\end{document}

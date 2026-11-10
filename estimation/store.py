@@ -126,12 +126,30 @@ def seal_protocol(protocol):
     return dict(protocol, fingerprint=fingerprint(protocol), provenance=provenance())
 
 
+def protocol_differences(old, new):
+    """Protocol entries that differ (scientific inputs itemised), ignoring the
+    fingerprint and code provenance."""
+    differences = []
+    for key in sorted((set(old) | set(new)) - {"fingerprint", "provenance"}):
+        before, after = old.get(key), new.get(key)
+        if key == "inputs" and isinstance(before, dict) and isinstance(after, dict):
+            differences += [f"inputs.{item}" for item in sorted(set(before) | set(after))
+                            if before.get(item) != after.get(item)]
+        elif before != after:
+            differences.append(key)
+    return differences
+
+
 def write_protocol(output, protocol, name="run_protocol.json"):
     """Allow a failed preflight to retry, but protect existing estimation files."""
     manifest = output / name
-    if manifest.exists() and json.loads(manifest.read_text()).get("fingerprint") != protocol["fingerprint"]:
+    existing = json.loads(manifest.read_text()) if manifest.exists() else None
+    if existing is not None and existing.get("fingerprint") != protocol["fingerprint"]:
         if any(path.is_file() for path in output.glob("test*/**/*")):
-            raise ValueError("Output directory contains a different protocol; choose a new directory")
+            origin = ("it was written by the scripts before the refactor" if "inputs" not in existing
+                      else "differs in: " + ", ".join(protocol_differences(existing, protocol)))
+            raise ValueError(f"Output directory {output} contains estimates of a different protocol ({origin}); "
+                             "choose a new --output-dir")
         print("Updating protocol: output directory has no estimation files yet.", flush=True)
     atomic_json(manifest, protocol)
 

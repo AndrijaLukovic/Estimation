@@ -13,7 +13,8 @@ from .store import load_completed, load_pickle
 def initial_values(result, spec, subjects=None, bounds=None):
     """Project saved parameters and align individual noise by participant ID."""
     layouts, identities = spec_cluster_layouts(spec)
-    if len(result["thetas"]) != spec.C or result["spec"].pw != spec.pw:
+    if (len(result["thetas"]) != spec.C or result["spec"].pw != spec.pw
+            or getattr(result["spec"], "utility", "power") != spec.utility):
         raise ValueError("Incompatible warm start")
     vectors = []
     ix = CANON[spec.pw]
@@ -69,70 +70,67 @@ def split_starts(result, spec, subjects, scale=.02, bounds=None):
     return starts
 
 
-def grid_initializations(spec, subjects, output, fingerprint, legacy_dir):
-    """Warm starts for a full-grid job: the original (unconditional) fit of the
-    same configuration, and the two closest already fitted configurations of
-    this run (a restricted model is a feasible start for a broader one, which
-    prevents avoidable nested-model LL reversals)."""
+def job_initializations(spec, subjects, output, fingerprint, warm_dirs=(), legacy_dir=None, bounds=None):
+    """Warm starts for one job (label -> initial values):
+
+    - legacy_<id>: the original unconditional fit of the same configuration;
+    - warm_<dir>: the same configuration in each warm directory (e.g. a full-sample run);
+    - corrected_<id>: the two closest configurations already fitted in this run
+      (a restricted model is a feasible start for a broader one, which prevents
+      avoidable nested-model LL reversals);
+    - Test 1: the nested Test 3 fit for C=4, and every class of the C-1 fit split
+      in two for C>=2 (so C cannot end below C-1), from this run or a warm directory.
+
+    Sources that lack target participants or do not fit the layout are skipped."""
     cid = spec.config_id()
-    initializations = {}
-    legacy_ids = [cid]
-    if spec.rp_mode != "mixed":
-        legacy_ids.append(cid.replace("_commem_", "_sepmem_"))
-    for old_id in legacy_ids:
-        path = legacy_dir / old_id / "result.pkl"
-        if path.exists():
-            old = load_pickle(path)
-            if not set(subjects).issubset(old["subjects"]):
-                print(f"  SKIP legacy warm start {old_id}: target participants missing", flush=True)
-                continue
-            initializations["legacy_" + old_id] = initial_values(old, spec, subjects=subjects)
+    starts = {}
+
+    def add(label, build):
+        try:
+            starts.update(build())
+        except ValueError as error:
+            print(f"  SKIP warm start {label}: {error}", flush=True)
+
+    def project(label, source):
+        add(label, lambda: {label: initial_values(source, spec, subjects=subjects, bounds=bounds)})
+
+    def find(config_id):
+        """Fit of config_id from this run, else from the first warm directory that has it."""
+        result = load_completed(output, config_id, fingerprint)
+        for warm_dir in warm_dirs:
+            if result is None and (warm_dir / config_id / "result.pkl").exists():
+                result = load_pickle(warm_dir / config_id / "result.pkl")
+        return result
+
+    if legacy_dir is not None:
+        legacy_ids = [cid] + ([cid.replace("_commem_", "_sepmem_")] if spec.rp_mode != "mixed" else [])
+        for old_id in legacy_ids:
+            if (legacy_dir / old_id / "result.pkl").exists():
+                project("legacy_" + old_id, load_pickle(legacy_dir / old_id / "result.pkl"))
+    for warm_dir in warm_dirs:
+        if (warm_dir / cid / "result.pkl").exists():
+            project(f"warm_{warm_dir.name}", load_pickle(warm_dir / cid / "result.pkl"))
     candidates = []
     for path in output.glob("test*/meta.json"):
         meta = json.loads(path.read_text())
-        if meta.get("equivalent_to") or meta["pw"] != spec.pw or meta["C"] != spec.C:
+        if (meta.get("equivalent_to") or meta["config_id"] == cid or meta["pw"] != spec.pw or meta["C"] != spec.C
+                or meta["test"] != spec.test or meta.get("rp_identity") != spec.rp_identity
+                or meta.get("utility", "power") != spec.utility):
             continue
-        same = meta["test"] == spec.test and meta.get("rp_identity") == spec.rp_identity
-        fixed_to_mixed = spec.test == "test1" and spec.C == 4 and meta["test"] == "test3"
-        if same or fixed_to_mixed:
-            score = (meta["curvature"] != spec.curvature, meta["discounting"] != spec.discounting,
-                     meta["memory"] != spec.memory, meta["bic"])
-            candidates.append((score, meta["config_id"]))
+        score = (meta["curvature"] != spec.curvature, meta["discounting"] != spec.discounting,
+                 meta["memory"] != spec.memory, meta["bic"])
+        candidates.append((score, meta["config_id"]))
     for _, source_id in sorted(candidates)[:2]:
         source = load_completed(output, source_id, fingerprint)
-        initializations["corrected_" + source_id] = initial_values(source, spec, subjects=subjects)
-    return initializations
-
-
-def exclusion_initializations(spec, subjects, output, fingerprint, source_dir, warm_dirs, bounds=None):
-    """Warm starts for a restricted-sample job: the full-sample fit of the same
-    model, the same model in each warm directory, the nested Test 3 fit for
-    Test 1 C=4, and every class of the C-1 fit split in two for Test 1 C>=2
-    (so C cannot end below C-1)."""
-    def find(cid):
-        """Fit of cid from this run, else from the first warm directory that has it."""
-        result = load_completed(output, cid, fingerprint)
-        for warm_dir in warm_dirs:
-            if result is None and (warm_dir / cid / "result.pkl").exists():
-                result = load_pickle(warm_dir / cid / "result.pkl")
-        return result
-
-    cid = spec.config_id()
-    initializations = {}
-    if (source_dir / cid / "result.pkl").exists():
-        initializations["full_sample_" + cid] = initial_values(
-            load_pickle(source_dir / cid / "result.pkl"), spec, subjects=subjects, bounds=bounds)
-    for warm_dir in warm_dirs:
-        if (warm_dir / cid / "result.pkl").exists():
-            initializations[f"warm_{warm_dir.name}"] = initial_values(
-                load_pickle(warm_dir / cid / "result.pkl"), spec, subjects=subjects, bounds=bounds)
+        if source is not None:
+            project("corrected_" + source_id, source)
     if spec.test == "test1" and spec.C == 4:
         test3_id = dataclasses.replace(spec, test="test3", rp_mode="fixed_4").config_id()
         nested = find(test3_id)
         if nested is not None:
-            initializations["nested_" + test3_id] = initial_values(nested, spec, subjects=subjects, bounds=bounds)
+            project("nested_" + test3_id, nested)
     if spec.test == "test1" and spec.C >= 2:
         smaller = find(dataclasses.replace(spec, C=spec.C - 1).config_id())
         if smaller is not None:
-            initializations.update(split_starts(smaller, spec, subjects, bounds=bounds))
-    return initializations
+            add(f"split_C{spec.C - 1}", lambda: split_starts(smaller, spec, subjects, bounds=bounds))
+    return starts

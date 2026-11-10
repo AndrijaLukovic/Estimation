@@ -13,6 +13,8 @@
     <div class="chart-grid"><div id="reference-chart"></div><div id="probability-chart"></div></div>
     <div class="controls"><label>相对参考点的金额 £ <input id="amount" type="number" min="0.01" max="1000000" step="1" value="100"></label><input id="amount-range" type="range" min="-2" max="4" step="0.05" value="2"><span id="amount-live"></span></div>
     <p class="note">效用图以 z=x−R 为横轴，绘图范围为所选金额的正负两侧。z≥0 时 u(z)=z^α⁺，z&lt;0 时 u(z)=−λ(−z)^α⁻；每条曲线对应一个类别。</p>
+    <p class="note">指数效用（配置名含 _cara）：z≥0 时 u(z)=(1−e^(−α⁺z))/α⁺，z&lt;0 时 u(z)=−λ(1−e^(α⁻z))/α⁻；α 是绝对风险厌恶系数（1/£），α=0 为线性。此时 A(d)→λ（d→0⁺），M(d)=λe^((α⁺−α⁻)d)。</p>
+    <p class="note">风险偏好：收益域风险溢价是在 0 与 +£d 之间各半的赌局的期望值减确定性等价，损失域风险溢价对应 0 与 −£d 之间各半的赌局，均以期望值绝对值的比例表示，只由效用函数决定（不含概率加权，λ 相互抵消）。正值为风险厌恶，负值为风险寻求；指数效用下 α⁺&gt;0 为收益域风险厌恶，α⁻&gt;0 为损失域风险寻求。</p>
     <div id="amount-table" class="table-wrap"></div><div class="chart-grid"><div id="utility-chart"></div><div id="amount-chart"></div></div>
     <p id="utility-downloads" class="downloads" hidden><a id="utility-svg">下载效用函数图（SVG）</a> · <a id="utility-png">下载效用函数图（PNG）</a> · 默认范围 ±£100</p>
     <p class="note">A(d)=λd^(α⁻−α⁺)，d→0⁺ 时的极限：α⁻>α⁺ 为 0，α⁻=α⁺ 为 λ，α⁻&lt;α⁺ 为 +∞。曲率的大小关系按估计值精确比较。</p>

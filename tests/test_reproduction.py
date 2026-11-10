@@ -11,7 +11,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from estimation.config import LOTTERIES, ROOT
+from estimation.config import LOTTERIES, RESULTS, ROOT
 from estimation.data import exclude_participants, observed_ce
 from estimation.em import grid_em_mixture
 from estimation.likelihood import result_loglik
@@ -52,11 +52,11 @@ class ReproductionTests(unittest.TestCase):
     def test_saved_results_reproduce_their_likelihood_exactly(self):
         """Every saved model of the current sample (and of the endpoint-exclusion
         samples) recomputes to the identical log-likelihood."""
-        directories = [ROOT / "results_grid_conditional_stricter",
-                       *sorted(ROOT.glob("results_grid_conditional_stricter_no_endpoint*"))]
+        directories = [RESULTS / "sample_stricter" / "grid",
+                       *sorted((RESULTS / "sample_stricter_no_endpoint").glob("*"))]
         directories = [directory for directory in directories if directory.is_dir()]
         if not directories:
-            self.skipTest("Requires saved results_grid_conditional_stricter* directories")
+            self.skipTest("Requires saved results/sample_stricter* directories")
         checked = 0
         for directory in directories:
             data = self.data
@@ -68,8 +68,14 @@ class ReproductionTests(unittest.TestCase):
                 with self.subTest(result=str(path.relative_to(ROOT))):
                     result = load_pickle(path)
                     ll, resp = result_loglik(result, data)
-                    self.assertEqual(ll, result["log_likelihood"])
-                    np.testing.assert_array_equal(resp, result["resp"])
+                    if result["spec"].utility == "exponential":
+                        # Fitted with the plain CARA inverse; the saturation-safe one
+                        # differs from it by floating-point rounding only.
+                        self.assertAlmostEqual(ll, result["log_likelihood"], delta=1e-6)
+                        np.testing.assert_allclose(resp, result["resp"], rtol=0, atol=1e-6)
+                    else:
+                        self.assertEqual(ll, result["log_likelihood"])
+                        np.testing.assert_array_equal(resp, result["resp"])
                     checked += 1
         self.assertGreater(checked, 0)
 

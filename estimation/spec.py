@@ -11,6 +11,11 @@ Four binary model dimensions (2^4 = 16 combinations):
     pw          : "prelec"  — single-parameter Prelec weighting
                   "tk"      — Tversky-Kahneman weighting
 
+Plus the utility family, orthogonal to the factorial (one per run directory):
+    utility     : "power"       — (x-R)^alpha_gain / -lambda (R-x)^alpha_loss
+                  "exponential" — CARA with absolute risk-aversion coefficients
+                                  alpha_gain/alpha_loss (config IDs end in _cara)
+
 Plus a reference-point mode, orthogonal to the factorial above:
     rp_mode     : "mixed"       — a1,a2,a3 estimated per cluster (simplex), Test 1
                   "fixed_pure"  — one RP identity gets weight 1, C=1, Test 2
@@ -29,7 +34,7 @@ from itertools import product
 
 import numpy as np
 
-from .config import BOUNDS
+from .config import BOUNDS, CARA_BOUNDS
 
 
 # ── Canonical parameter-vector layouts ───────────────────────────────────────
@@ -54,6 +59,9 @@ RP_ONEHOT = {
 }
 RP_LABELS_4 = ["SQ", "PA", "LE", "FE"]   # Test-3 cluster order
 
+UTILITIES = ("power", "exponential")
+UTILITY_TAGS = {"exponential": "cara"}   # config-ID token after pw; none for power
+
 
 @dataclass(frozen=True)
 class ModelSpec:
@@ -65,9 +73,14 @@ class ModelSpec:
     rp_mode: str          # "mixed" | "fixed_pure" | "fixed_4"
     C: int                # number of clusters
     rp_identity: str = None   # only for rp_mode == "fixed_pure": "SQ"|"PA"|"LE"|"FE"
+    utility: str = "power"    # "power" | "exponential"; pickles without it are power
 
     def config_id(self):
+        if self.utility not in UTILITIES:
+            raise ValueError(f"Unknown utility: {self.utility!r}")
         tag = f"{self.test}_{self.discounting}_{self.curvature}_{self.memory}_{self.pw}"
+        if self.utility in UTILITY_TAGS:
+            tag += "_" + UTILITY_TAGS[self.utility]
         if self.rp_mode == "mixed":
             return f"{tag}_C{self.C}"
         elif self.rp_mode == "fixed_pure":
@@ -95,6 +108,7 @@ class ClusterLayout:
     is_sepmem: bool               # True iff spec.memory == "sepmem" for this cluster
     has_delta_le: bool            # if True, an extra free scalar delta_le is appended
     delta_le_fixed: float         # value used for delta_le when sepmem but R^LE irrelevant
+    utility: str = "power"        # spec.utility; selects the default curvature bounds
 
 
 def _rp_relevance(rp_mode, rp_identity):
@@ -179,7 +193,7 @@ def build_cluster_layout(spec: ModelSpec, rp_identity=None):
     return ClusterLayout(
         method=method, free_positions=free, fixed_values=fixed,
         link_AL_to_AG=link_al, is_sepmem=is_sepmem, has_delta_le=has_delta_le,
-        delta_le_fixed=delta_le_fixed,
+        delta_le_fixed=delta_le_fixed, utility=spec.utility,
     )
 
 
@@ -243,7 +257,7 @@ def expand_all(free_vecs, layouts):
 
 # ── Bounds, init, names, k for the reduced (free) vector ──────────────────
 # ``bounds`` arguments are bound tables {method: canonical bounds}; None means
-# config.BOUNDS.
+# default_bounds(layout.utility).
 
 _BASE_NOISE = {
     "tk": (
@@ -256,10 +270,25 @@ _BASE_NOISE = {
     ),
 }
 _DELTA_LE_BASE_NOISE = (1.0, 0.05)   # same base/noise as the DELTA slot
+_CARA_BASE_NOISE = (0.0, 0.003)      # AG and AL under exponential utility
 
 
-def _base_bounds(method, bounds=None):
-    return (BOUNDS if bounds is None else bounds)[method]
+def default_bounds(utility="power"):
+    """Default bound table of a utility family: config.BOUNDS, with both
+    curvature bounds set to config.CARA_BOUNDS for exponential utility."""
+    if utility == "power":
+        return BOUNDS
+    if utility == "exponential":
+        table = BOUNDS
+        for name in ("AG", "AL"):
+            for side, value in zip(("low", "high"), CARA_BOUNDS):
+                table = replace_bound(name, side, value, table)
+        return table
+    raise ValueError(f"Unknown utility: {utility!r}")
+
+
+def _base_bounds(layout, bounds=None):
+    return (default_bounds(layout.utility) if bounds is None else bounds)[layout.method]
 
 
 def replace_bound(name, side, value, bounds=None):
@@ -279,7 +308,7 @@ def replace_bound(name, side, value, bounds=None):
 def bounds_free(layout: ClusterLayout, bounds=None):
     """L-BFGS-B bounds for the reduced (free) vector, in free_positions order,
     with the delta_le bound (identical to the DELTA bound) appended if used."""
-    base = _base_bounds(layout.method, bounds)
+    base = _base_bounds(layout, bounds)
     b = [base[pos] for pos in layout.free_positions]
     if layout.has_delta_le:
         b.append(base[CANON[layout.method]["DELTA"]])
@@ -294,8 +323,11 @@ def init_free(layout: ClusterLayout, rng: np.random.Generator, bounds=None):
 
     idx = CANON[layout.method]
     base, noise = _BASE_NOISE[layout.method]
-    lo = np.array([b[0] for b in _base_bounds(layout.method, bounds)], dtype=float)
-    hi = np.array([b[1] for b in _base_bounds(layout.method, bounds)], dtype=float)
+    if layout.utility == "exponential":
+        base, noise = base.copy(), noise.copy()
+        base[[idx["AG"], idx["AL"]]], noise[[idx["AG"], idx["AL"]]] = _CARA_BASE_NOISE
+    lo = np.array([b[0] for b in _base_bounds(layout, bounds)], dtype=float)
+    hi = np.array([b[1] for b in _base_bounds(layout, bounds)], dtype=float)
     full = np.clip(base + rng.standard_normal(len(base)) * noise, lo, hi)
 
     s_positions = {idx["S1"], idx["S2"], idx["S3"]}
@@ -306,7 +338,7 @@ def init_free(layout: ClusterLayout, rng: np.random.Generator, bounds=None):
 
     vec = [full[pos] for pos in layout.free_positions]
     if layout.has_delta_le:
-        d_lo, d_hi = _base_bounds(layout.method, bounds)[idx["DELTA"]]
+        d_lo, d_hi = _base_bounds(layout, bounds)[idx["DELTA"]]
         base_d, noise_d = _DELTA_LE_BASE_NOISE
         vec.append(float(np.clip(base_d + rng.standard_normal() * noise_d, d_lo, d_hi)))
     return np.array(vec, dtype=float)

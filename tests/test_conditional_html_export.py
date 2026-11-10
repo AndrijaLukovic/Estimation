@@ -15,7 +15,7 @@ from urllib.parse import parse_qs
 
 import numpy as np
 
-from estimation.config import LOTTERIES, ROOT
+from estimation.config import LOTTERIES, RESULTS, ROOT
 from estimation.diagnostics import probability_shape
 from estimation.lottery_paths import transform
 from estimation.prepare import prepare_grid_data
@@ -157,6 +157,20 @@ class UtilityReportTests(unittest.TestCase):
                 self.assertEqual(clusters[0]["amplitude_zero_limit"],float("inf"))
                 self.assertEqual(json.loads(json_text(clusters))[0]["amplitude_zero_limit"],"Infinity")
 
+    def test_exponential_utility_report_helpers(self):
+        self.assertEqual(amplitude_zero_limit(2.25, .01, -.005, "exponential"), 2.25)
+        values = {"alpha_gain": .01, "alpha_loss": .02, "lambda": 2.}
+        offsets, utility = utility_curve(values, extent=100, utility="exponential")
+        self.assertAlmostEqual(utility[-1], -np.expm1(-1)/.01)
+        self.assertAlmostEqual(utility[0], -2*(-np.expm1(-2))/.02)
+        self.assertEqual(utility[offsets == 0].tolist(), [0])
+        self.assertTrue(np.all(np.diff(utility) > 0))
+        result = ReportLanguageTests.make_result()
+        result["spec"] = ModelSpec("test1", "exp", "commonalpha", "commem", "prelec", "mixed", 1, utility="exponential")
+        cluster = cluster_parameters(result, 1e-4)[0]
+        self.assertEqual(cluster["utility"], "exponential")
+        self.assertEqual(cluster["amplitude_zero_limit"], cluster["values"]["lambda"])
+
     def test_utility_figure_uses_separate_gain_and_loss_curvature(self):
         offsets,utility=utility_curve({"alpha_gain":.5,"alpha_loss":2.,"lambda":2.},extent=9)
         self.assertEqual(offsets[0],-9)
@@ -172,7 +186,7 @@ class UtilityReportTests(unittest.TestCase):
 class ConditionalHTMLTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        path=ROOT/"results_grid_conditional/test1_qh_sepalpha_commem_prelec_C2/result.pkl"
+        path=RESULTS/"sample_original/grid_20seeds/test1_qh_sepalpha_commem_prelec_C2/result.pkl"
         if not path.exists():raise unittest.SkipTest("Requires a saved conditional-grid C=2 result")
         with path.open("rb") as fh:cls.result=pickle.load(fh)
 
@@ -209,7 +223,7 @@ class ConditionalHTMLTests(unittest.TestCase):
 
     def test_shared_scalar_audit_reproduces_saved_likelihood_and_posterior(self):
         # Audit the archived result against its original participant filter.
-        snapshot=ROOT/"results_grid_conditional/corrected_source_snapshot"
+        snapshot=RESULTS/"sample_original/grid_20seeds/corrected_source_snapshot"
         with patch.object(sys,"path",[str(snapshot),*sys.path]),patch.dict(sys.modules):
             module_spec=importlib.util.spec_from_file_location("conditional_fixture_data",snapshot/"data.py")
             fixture_data=importlib.util.module_from_spec(module_spec)

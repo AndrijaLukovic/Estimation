@@ -10,7 +10,7 @@ Reads every <results_dir>/<config_id>/{meta.json,result.pkl} and builds
     test2_pairwise_<spec>.png   preference-param pairplot, 4 RP points
     test3_map_summary.csv       model-implied shares vs MAP counts/percentages
 
-    python scripts/consolidate.py results_grid
+    python scripts/consolidate.py results/legacy_unconditional
 """
 
 import argparse
@@ -33,7 +33,8 @@ SPEC_COLS = ["discounting", "curvature", "memory", "pw"]
 
 
 def _spec_key(row):
-    return "_".join(row[c] for c in SPEC_COLS)
+    key = "_".join(row[c] for c in SPEC_COLS)
+    return key + "_cara" if row.get("utility") == "exponential" else key
 
 
 def load_all_meta(results_dir: Path):

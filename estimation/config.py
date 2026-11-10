@@ -8,6 +8,12 @@ from .lotteries import LOTTERIES_V2
 ROOT = Path(__file__).resolve().parent.parent
 DATA_FILE = ROOT / "gamedata.csv"
 
+# Estimation results: results/<sample>/<run>/ (see results/README.md, built by
+# scripts/catalog_results.py). Profiles sit in results/<sample>/profiles/.
+RESULTS = ROOT / "results"
+# Original 144-model grid with the unconditional valuation (warm starts only).
+LEGACY_RESULTS = RESULTS / "legacy_unconditional"
+
 # Lottery set to estimate on.
 LOTTERIES = LOTTERIES_V2
 
@@ -30,6 +36,19 @@ PRELEC_BOUNDS = (
 )
 # Default bound table; run-specific changes go through spec.replace_bound.
 BOUNDS = {"tk": TK_BOUNDS, "prelec": PRELEC_BOUNDS}
+
+# Exponential (CARA) utility replaces both curvature bounds above with this one:
+# alpha_gain/alpha_loss are then absolute risk-aversion coefficients in 1/£
+# (> 0 concave gains / convex losses, < 0 the reverse, 0 linear), not exponents.
+# The largest |x-R| in the data is £2155, and both ends stop at the float limit:
+#   alpha > 0: u saturates at 1/alpha; exp(-alpha*|x-R|) underflows past 745, so
+#              alpha < 0.34. At +0.3 a lottery is priced near its worst outcome.
+#              Above alpha*|x-R| ~ 37 the CE needs valuation's saturation-safe
+#              inverse, because u itself no longer separates the outcomes.
+#   alpha < 0: u is unbounded, no saturation; exp overflows at |alpha|*|x-R| > 709,
+#              so |alpha| < 0.33. At -0.3 a lottery is priced near its best outcome.
+# See spec.default_bounds.
+CARA_BOUNDS = (-0.3, 0.3)
 
 # Individual noise: sigma_i = ksi_i * spread.
 KSI_BOUNDS = (1e-4, 1.5)

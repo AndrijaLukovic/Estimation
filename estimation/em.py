@@ -46,6 +46,9 @@ def grid_em_mixture(spec: ModelSpec, y=None, lotteries=None,
         free_bounds = [bounds_free(layout, bounds) for layout in layouts]
     c = spec.C
     method = spec.pw
+    utility = spec.utility
+    if any(layout.utility != utility for layout in layouts):
+        raise ValueError(f"Cluster layouts do not use the {utility} utility of {spec.config_id()}")
 
     rng = np.random.default_rng(seed)
     pis = np.ones(c) / c
@@ -79,7 +82,7 @@ def grid_em_mixture(spec: ModelSpec, y=None, lotteries=None,
 
     def expectation():
         thetas, deltas = expand_all(free_vecs, layouts)
-        state_mu = predict_states(thetas, deltas, method, data)
+        state_mu = predict_states(thetas, deltas, method, data, utility)
         ll, resp = posterior(component_loglik(state_mu, ksi, data), pis)
         return ll, resp, state_mu
 
@@ -122,7 +125,7 @@ def grid_em_mixture(spec: ModelSpec, y=None, lotteries=None,
 
             def neg_q(fv, layout_j=layout_j, weight_sum=weight_sum, target=target):
                 th_j, dle_j = expand_free(fv, layout_j)
-                mu = data.predict(th_j, method, dle_j)
+                mu = data.predict(th_j, method, dle_j, utility)
                 if not np.all(np.isfinite(mu)):
                     return 1e100
                 return .5 * float(np.dot(weight_sum, (mu - target) ** 2))
@@ -139,7 +142,7 @@ def grid_em_mixture(spec: ModelSpec, y=None, lotteries=None,
 
         # ── M-step: ksi ──────────────────────────────────────────────────
         thetas, delta_les = expand_all(free_vecs, layouts)
-        state_mu = predict_states(thetas, delta_les, method, data)
+        state_mu = predict_states(thetas, delta_les, method, data, utility)
         ksi = noise_mstep(resp, state_mu[data.state_index], data)
 
         iter_log.append(dict(iteration=iteration + 1, log_likelihood=ll,

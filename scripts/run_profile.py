@@ -5,7 +5,7 @@ Examples (use --list to inspect jobs without estimating or writing output):
     python scripts/run_profile.py --parameters palpha --cluster PA
     python scripts/run_profile.py --parameters alpha_gain --cluster FE
     python scripts/run_profile.py --parameters lambda alpha_loss r --cluster all
-    python scripts/run_profile.py --result results_grid_conditional_stricter/test1_exp_sepalpha_commem_prelec_C4/result.pkl --parameters delta_pa --cluster 4
+    python scripts/run_profile.py --result results/sample_stricter/grid/test1_exp_sepalpha_commem_prelec_C4/result.pkl --parameters delta_pa --cluster 4
     python scripts/run_profile.py --parameters palpha --cluster PA --grid 1e-8 1e-6 1e-4 .001 .01 .1
 
 Default source: stricter-sample Test 3, exp/sepalpha/commem/Prelec. The default
@@ -42,16 +42,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import numpy as np  # noqa: E402
 
-from estimation.config import LOTTERIES, ROOT, SEEDS  # noqa: E402
+from estimation.config import LOTTERIES, RESULTS, SEEDS  # noqa: E402
 from estimation.data import observed_ce  # noqa: E402
 from estimation.likelihood import result_loglik  # noqa: E402
 from estimation.lottery_paths import transform  # noqa: E402
 from estimation.prepare import prepare_grid_data  # noqa: E402
 from estimation.profile import (choose_jobs, default_output, init_worker, load_starts,  # noqa: E402
                                 run_one)
+from estimation.spec import default_bounds  # noqa: E402
 from estimation.store import atomic_json, load_result, scientific_inputs, seal_protocol, sha256_file  # noqa: E402
 
-DEFAULT_RESULT = ROOT / "results_grid_conditional_stricter/test3_exp_sepalpha_commem_prelec/result.pkl"
+DEFAULT_RESULT = RESULTS / "sample_stricter/grid/test3_exp_sepalpha_commem_prelec/result.pkl"
 
 
 def parse_args(argv=None):
@@ -109,9 +110,13 @@ def main(argv=None):
     if output in path.parents or source_root in output.parents:
         raise ValueError("Profile output must be separate from the estimation input directory")
     output.mkdir(parents=True, exist_ok=True)
-    protocol = seal_protocol(dict(version="conditional_component_profile_v1", inputs=scientific_inputs(observed),
+    spec_record = asdict(source["spec"])
+    if spec_record["utility"] == "power":
+        del spec_record["utility"]   # power protocols predate the field; keep their fingerprints
+    protocol = seal_protocol(dict(version="conditional_component_profile_v1",
+        inputs=scientific_inputs(observed, default_bounds(source["spec"].utility)),
         result=str(path), result_sha256=sha256_file(path), warm_sha256=warm_hashes,
-        spec=asdict(source["spec"]), jobs=[dict(target=asdict(target), grid=grid) for target, grid in jobs],
+        spec=spec_record, jobs=[dict(target=asdict(target), grid=grid) for target, grid in jobs],
         seeds=seeds, max_iter=args.max_iter, tol=args.tol,
         n_subjects=len(data.subjects), n_obs=len(data.observed), warm_ll_window=args.warm_ll_window))
     manifest = output / "protocol.json"

@@ -1,0 +1,1 @@
+清洗后样本（只去掉问卷未完成和自评 'Too complicated or extremely complicated' 的人）：1,131 人。

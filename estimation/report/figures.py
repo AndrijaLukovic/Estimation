@@ -65,7 +65,7 @@ def save_figures(output, summaries, language="zh"):
     for index, summary in enumerate(utilities, 1):
         fig, ax = plt.subplots(figsize=(9, 5.5))
         for cluster in summary["clusters"]:
-            offsets, utility = utility_curve(cluster["values"])
+            offsets, utility = utility_curve(cluster["values"], utility=cluster.get("utility", "power"))
             ax.plot(offsets, utility, label=cluster["label"])
         ax.axhline(0, color="#8597a5", linewidth=.8, linestyle="--")
         ax.axvline(0, color="#8597a5", linewidth=.8, linestyle="--")

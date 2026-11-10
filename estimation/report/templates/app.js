@@ -107,15 +107,25 @@
     if(p<=0)return 0;if(p>=1)return 1;const v=c.values;
     return c.method==="tk"?Math.pow(p,v.gamma)/Math.pow(Math.pow(p,v.gamma)+Math.pow(1-p,v.gamma),1/v.gamma):Math.exp(-(v.beta??1)*Math.pow(-Math.log(p),v.palpha));
   }
+  // Utility of a gain d>=0 and the size of a loss d: power d^a, or CARA (1-e^(-ad))/a (utility "exponential").
+  function curvature(d,a,c){return c.utility==="exponential"?(a===0?d:-Math.expm1(-a*d)/a):d**a;}
+  function utilityAt(z,c){const v=c.values;return z>=0?curvature(z,v.alpha_gain,c):-v.lambda*curvature(-z,v.alpha_loss,c);}
+  // A(d)=−u(−d)/u(d) and M(d)=u'(−d)/u'(d).
+  function amplitude(d,c){const v=c.values;return c.utility==="exponential"?v.lambda*curvature(d,v.alpha_loss,c)/curvature(d,v.alpha_gain,c):v.lambda*d**(v.alpha_loss-v.alpha_gain);}
+  // Risk premium of a 50/50 gamble between 0 and ±d under the utility alone (no probability
+  // weighting; λ cancels), as a share of |EV|: >0 risk averse, <0 risk seeking (cpt.risk_premium).
+  function halfCE(d,a,c){if(c.utility!=="exponential")return d*2**(-1/a);if(a===0)return d/2;const t=-a*d;return -(Math.max(t,0)+Math.log(.5+.5*Math.exp(-Math.abs(t))))/a;}
+  function riskPremium(d,c){const v=c.values;return [1-2*halfCE(d,v.alpha_gain,c)/d,2*halfCE(d,v.alpha_loss,c)/d-1];}
+  function attitude(share){return `${pct(share)} (${Math.abs(share)<5e-4?"风险中性":share>0?"风险厌恶":"风险寻求"})`;}
+  function marginal(d,c){const v=c.values;return c.utility==="exponential"?v.lambda*Math.exp((v.alpha_gain-v.alpha_loss)*d):amplitude(d,c)*v.alpha_loss/v.alpha_gain;}
   function ratioSeries(clusters,prefix="") {
     return clusters.map((c,i)=>({name:prefix+c.label,color:COLORS[i%COLORS.length],points:Array.from({length:121},(_,j)=>{
-      const x=-2+j*.05;return [x,Math.log10(c.values.lambda)+(c.values.alpha_loss-c.values.alpha_gain)*x];})}));
+      const x=-2+j*.05;return [x,c.utility==="exponential"?Math.log10(amplitude(10**x,c)):Math.log10(c.values.lambda)+(c.values.alpha_loss-c.values.alpha_gain)*x];})}));
   }
   function utilitySeries(clusters,extent=100,prefix="") {
     const positive=Array.from({length:201},(_,i)=>extent*10**(-6+6*i/200));
     const offsets=[...positive.slice().reverse().map(z=>-z),0,...positive];
-    return clusters.map((c,i)=>({name:prefix+c.label,color:COLORS[i%COLORS.length],points:offsets.map(z=>
-      [z,z>=0?z**c.values.alpha_gain:-c.values.lambda*(-z)**c.values.alpha_loss])}));
+    return clusters.map((c,i)=>({name:prefix+c.label,color:COLORS[i%COLORS.length],points:offsets.map(z=>[z,utilityAt(z,c)])}));
   }
   function dashboard() {
     const files=DATA.files,selected=new Set();let filtered=[],page=0,sortKey="bic",sortDirection=1;
@@ -204,7 +214,7 @@
       function amount() {
         const value=Number($("amount").value);if(!(value>0)&&Number.isFinite(value))return;
         if(!Number.isFinite(value)||value<=0)return;$("amount-live").textContent=`£${fmt(value,2)}`;
-        $("amount-table").innerHTML=table(["类别",`A(£${fmt(value,2)})`,`M(£${fmt(value,2)})`,"总幅度比较","边际比较"],c.map(q=>{const v=q.values,A=v.lambda*value**(v.alpha_loss-v.alpha_gain),M=A*v.alpha_loss/v.alpha_gain;return [esc(q.label),fmt(A,7),fmt(M,7),A>1?"损失较大":"收益较大／相等",M>1?"损失较敏感":"收益较敏感／相等"];}));
+        $("amount-table").innerHTML=table(["类别",`A(£${fmt(value,2)})`,`M(£${fmt(value,2)})`,"总幅度比较","边际比较","收益域风险溢价","损失域风险溢价"],c.map(q=>{const A=amplitude(value,q),M=marginal(value,q),[gain,loss]=riskPremium(value,q);return [esc(q.label),fmt(A,7),fmt(M,7),A>1?"损失较大":"收益较大／相等",M>1?"损失较敏感":"收益较敏感／相等",attitude(gain),attitude(loss)];}));
         lineChart("amount-chart","金额依赖：log10 A(d)，0 代表等额损益总幅度相同",ratioSeries(c),{xlabel:"相对参考点的金额 d（英镑，对数刻度）",xformat:x=>`£${fmt(10**x,2)}`,zero:true});
         lineChart("utility-chart","效用函数 u(z)",utilitySeries(c,value),{xmin:-value,xmax:value,xlabel:"相对参考点的金额 z=x−R（英镑）",ylabel:"u(z)",zero:true,reference:true});
       }

@@ -1,6 +1,7 @@
 % Results section: exp / sepalpha / commem / TK, after screening out top-endpoint responders.
-% Estimates: python run_exclusion_check.py --pw tk --lambda-upper 20 --gamma-lower 0.28 --test2 \
-%   --output-dir results_grid_conditional_stricter_no_endpoint_tk_main  (see the script docstring)
+% Estimates: results/sample_stricter_no_endpoint/tk_lam20_g028_main. Equivalent command (new output dir):
+%   python scripts/run_grid.py --exclude-endpoint 0.5 --discounting exp --curvature sepalpha --memory commem \
+%     --pw tk --lambda-upper 20 --gamma-lower 0.28 --output-dir <dir>
 % Figures: python slides/make_figures.py  (writes slides/figures/*.pdf)
 % Compile: pdflatex results.tex  (run inside slides/)
 \documentclass[aspectratio=169,11pt]{beamer}

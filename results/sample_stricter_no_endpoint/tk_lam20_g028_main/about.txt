@@ -1,0 +1,1 @@
+TK：Test 2 + Test 1 C=1–4 + Test 3，λ ≤ 20，γ ≥ 0.28。slides/results.tex 用的结果。

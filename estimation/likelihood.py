@@ -6,9 +6,9 @@ from .config import KSI_BOUNDS
 from .spec import k_free
 
 
-def predict_states(thetas, delta_les, method, data):
+def predict_states(thetas, delta_les, method, data, utility="power"):
     """(state, cluster) predicted CEs."""
-    return np.column_stack([data.predict(theta, method, delta)
+    return np.column_stack([data.predict(theta, method, delta, utility)
                             for theta, delta in zip(thetas, delta_les)])
 
 
@@ -30,7 +30,8 @@ def posterior(log_l, pis):
 
 def result_loglik(result, data):
     """Recompute a saved result's log-likelihood and responsibilities."""
-    mu = predict_states(result["thetas"], result["delta_les"], result["spec"].pw, data)
+    mu = predict_states(result["thetas"], result["delta_les"], result["spec"].pw, data,
+                        result["spec"].utility)
     if not np.isfinite(mu[data.state_index]).all():
         raise FloatingPointError("Nonfinite predictions")
     return posterior(component_loglik(mu, np.asarray(result["ksi"]), data), result["pis"])

@@ -1,10 +1,13 @@
 """Figures for the results slides.
 
 Main results: exp/sepalpha/commem/TK after excluding top-endpoint responders
-(scripts/run_exclusion.py, results_grid_conditional_stricter_no_endpoint_tk_main).
+(results/sample_stricter_no_endpoint/tk_lam20_g028_main; scripts/run_grid.py --exclude-endpoint 0.5).
+CARA slides (results_cara.tex): the same sample and protocol with exponential utility
+(results/sample_stricter_no_endpoint/cara_sepalpha_tk_wide).
 Backup profile figures: full sample, Prelec.
 
     python slides/make_figures.py                 # PDF figures into slides/figures
+    python slides/make_figures.py --only cara     # only the CARA figures
     python slides/make_figures.py --format png --out /some/dir
 """
 
@@ -23,13 +26,16 @@ from matplotlib.lines import Line2D
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+from estimation.config import RESULTS  # noqa: E402
 from estimation.spec import CANON  # noqa: E402
 
-MAIN = ROOT / "results_grid_conditional_stricter_no_endpoint_tk_main"
-PROFILES = ROOT / "profiles/results_grid_conditional_stricter/test3_exp_sepalpha_commem_prelec"
+MAIN = RESULTS / "sample_stricter_no_endpoint" / "tk_lam20_g028_main"
+CARA = RESULTS / "sample_stricter_no_endpoint" / "cara_sepalpha_tk_wide"
+PROFILES = RESULTS / "sample_stricter" / "profiles" / "grid" / "test3_exp_sepalpha_commem_prelec"
 BLUE, ORANGE, INK, MUTED, GRID, SHADE = "#2a78d6", "#eb6834", "#0b0b0b", "#52514e", "#e4e3de", "#f0efec"
+TYPE_COLORS = dict(SQ=BLUE, PA=ORANGE, LE="#1baf7a", FE="#eda100")   # fixed per type, categorical slots 1-4
 THRESHOLD = 1.92   # chi2(1) 95% quantile / 2; a heuristic only (boundary + mixture)
-EXCLUSION = .5     # scripts/run_exclusion.py default
+EXCLUSION = .5     # --exclude-endpoint used for the main results
 
 plt.rcParams.update({
     "font.size": 8, "axes.labelsize": 8, "xtick.labelsize": 7, "ytick.labelsize": 7, "legend.fontsize": 7,
@@ -140,52 +146,132 @@ def class_label(theta, share):
     return f"{reference} ({share:.0%})"
 
 
-def class_crosstab(out, fmt):
-    def load(name):
-        with (MAIN / name / "result.pkl").open("rb") as handle:
-            return pickle.load(handle)
-    test1 = load("test1_exp_sepalpha_commem_tk_C4")
-    test3 = load("test3_exp_sepalpha_commem_tk")
-    assert test1["subjects"] == test3["subjects"]
-    order = np.argsort(-np.asarray(test1["pis"]))
-    counts = np.zeros((4, 4), dtype=int)
-    np.add.at(counts, (np.argsort(order)[np.asarray(test1["resp"]).argmax(1)], np.asarray(test3["resp"]).argmax(1)), 1)
-    rows = [f"{k + 1}: " + class_label(test1["thetas"][j], test1["pis"][j]) for k, j in enumerate(order)]
-    columns = [f"{label}\n{share:.0%}" for label, share in zip(test3["rp_identities"], test3["pis"])]
+def load_result(run, name):
+    with (run / name / "result.pkl").open("rb") as handle:
+        return pickle.load(handle)
+
+
+def modal(result):
+    return np.asarray(result["resp"]).argmax(1)
+
+
+def heatmap(counts, rows, columns, xlabel, ylabel, path):
     ramp = LinearSegmentedColormap.from_list("blue", ["#f4f8fd", "#86b6ef", "#2a78d6", "#104281"])
     fig, axis = plt.subplots(figsize=(2.5, 2.0))
     axis.imshow(counts, cmap=ramp, vmin=0, vmax=counts.max(), aspect="auto")
     for (i, j), count in np.ndenumerate(counts):
         axis.text(j, i, str(count), ha="center", va="center", fontsize=9,
                   color="white" if count > .45 * counts.max() else INK)
-    axis.set_xticks(range(4))
+    axis.set_xticks(range(counts.shape[1]))
     axis.set_xticklabels(columns, fontsize=8)
-    axis.set_yticks(range(4))
+    axis.set_yticks(range(counts.shape[0]))
     axis.set_yticklabels(rows, fontsize=8)
     axis.xaxis.tick_top()
     axis.xaxis.set_label_position("top")
-    axis.set_xlabel("Test 3 type (modal posterior)")
-    axis.set_ylabel("Test 1, $C=4$ class (modal)")
+    axis.set_xlabel(xlabel)
+    axis.set_ylabel(ylabel)
     axis.tick_params(length=0)
     axis.grid(False)
     for spine in axis.spines.values():
         spine.set_visible(False)
-    fig.savefig(out / f"crosstab_test1_test3.{fmt}")
+    fig.savefig(path)
     plt.close(fig)
+
+
+def type_columns(result):
+    return [f"{label}\n{share:.0%}" for label, share in zip(result["rp_identities"], result["pis"])]
+
+
+def class_crosstab(out, fmt, run=MAIN, suffix="", name="crosstab_test1_test3"):
+    """Test 1 C=4 class (rows, numbered by share) against Test 3 type (columns)."""
+    test1 = load_result(run, f"test1_exp_sepalpha_commem_tk{suffix}_C4")
+    test3 = load_result(run, f"test3_exp_sepalpha_commem_tk{suffix}")
+    assert test1["subjects"] == test3["subjects"]
+    order = np.argsort(-np.asarray(test1["pis"]))
+    counts = np.zeros((4, 4), dtype=int)
+    np.add.at(counts, (np.argsort(order)[modal(test1)], modal(test3)), 1)
+    rows = [f"{k + 1}: " + class_label(test1["thetas"][j], test1["pis"][j]) for k, j in enumerate(order)]
+    heatmap(counts, rows, type_columns(test3), "Test 3 type (modal posterior)", "Test 1, $C=4$ class (modal)",
+            out / f"{name}.{fmt}")
+
+
+def cara_crosstab(out, fmt):
+    class_crosstab(out, fmt, CARA, "_cara", "cara_crosstab_test1_test3")
+
+
+def utility_crosstab(out, fmt):
+    """Test 3 type under power utility (rows) against CARA (columns)."""
+    power = load_result(MAIN, "test3_exp_sepalpha_commem_tk")
+    cara = load_result(CARA, "test3_exp_sepalpha_commem_tk_cara")
+    assert power["subjects"] == cara["subjects"]
+    counts = np.zeros((4, 4), dtype=int)
+    np.add.at(counts, (modal(power), modal(cara)), 1)
+    rows = [f"{label} ({share:.0%})" for label, share in zip(power["rp_identities"], power["pis"])]
+    heatmap(counts, rows, type_columns(cara), "CARA: Test 3 type", "Power: Test 3 type",
+            out / f"cara_crosstab_utility.{fmt}")
+
+
+def spread_labels(values, gap):
+    """Label heights near ``values``, at least ``gap`` apart, in the same order."""
+    order = np.argsort(values)
+    placed = np.array(values, dtype=float)[order]
+    for k in range(1, len(placed)):
+        placed[k] = max(placed[k], placed[k - 1] + gap)
+    placed -= max(0, placed[-1] - max(values))   # shift back so the top label stays at its line
+    result = np.empty_like(placed)
+    result[order] = placed
+    return result
+
+
+def risk_premium_curves(out, fmt):
+    """Risk premium of 50/50 gambles by stake for each CARA Test 3 type (utility only)."""
+    from estimation import cpt
+    cara = load_result(CARA, "test3_exp_sepalpha_commem_tk_cara")
+    index = CANON["tk"]
+    stakes = np.geomspace(1, 1000, 91)
+    fig, axes = plt.subplots(1, 2, figsize=(4.7, 2.25), gridspec_kw=dict(wspace=.55))
+    titles = ["Gains: 50/50 of \u00a30 or +\u00a3$x$", "Losses: 50/50 of \u00a30 or \u2212\u00a3$x$"]
+    for side, (axis, title) in enumerate(zip(axes, titles)):
+        axis.axhline(0, color=MUTED, lw=.8, zorder=1)
+        ends, labels = [], []
+        for theta, label in zip(cara["thetas"], cara["rp_identities"]):
+            options = dict(alpha=float(theta[index["AG"]]), alpha_loss=float(theta[index["AL"]]), utility="exponential")
+            values = 100 * np.array([cpt.risk_premium(x, **options)[side] for x in stakes])
+            axis.plot(stakes, values, color=TYPE_COLORS[label], lw=1.6, zorder=3)
+            ends.append(values[-1])
+            labels.append(label)
+        low, high = axis.get_ylim()
+        for label, height in zip(labels, spread_labels(ends, .075 * (high - low))):
+            axis.text(1150, height, label, fontsize=7, color=INK, va="center", ha="left", clip_on=False)
+        axis.set_xscale("log")
+        axis.set_xlim(1, 1000)
+        axis.set_xticks([1, 10, 100, 1000])
+        axis.set_xticklabels(["\u00a31", "\u00a310", "\u00a3100", "\u00a31,000"])
+        axis.minorticks_off()
+        axis.set_xlabel("Stake $x$")
+        axis.set_title(title, fontsize=7.5, loc="left", color=INK)
+    axes[0].set_ylabel("Risk premium (% of |EV|)")
+    fig.savefig(out / f"cara_risk_premium.{fmt}")
+    plt.close(fig)
+
+
+FIGURES = dict(main=(screening, class_crosstab, lambda_profile, palpha_profile),
+               cara=(cara_crosstab, utility_crosstab, risk_premium_curves))
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--out", type=Path, default=Path(__file__).resolve().parent / "figures")
     parser.add_argument("--format", default="pdf", choices=["pdf", "png"])
+    parser.add_argument("--only", choices=sorted(FIGURES), help="one group of figures (default: all)")
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     if args.format == "png":
         plt.rcParams["savefig.dpi"] = 300
-    screening(args.out, args.format)
-    class_crosstab(args.out, args.format)
-    lambda_profile(args.out, args.format)
-    palpha_profile(args.out, args.format)
+    for group, figures in FIGURES.items():
+        if args.only in (None, group):
+            for figure in figures:
+                figure(args.out, args.format)
     print(f"Figures written to {args.out}")
 
 

@@ -35,7 +35,7 @@ def upgrade_clusters(clusters):
         values = cluster.get("values", {})
         if all(key in values for key in ["lambda", "alpha_gain", "alpha_loss"]):
             cluster["amplitude_zero_limit"] = readable(amplitude_zero_limit(
-                values["lambda"], values["alpha_gain"], values["alpha_loss"]))
+                values["lambda"], values["alpha_gain"], values["alpha_loss"], cluster.get("utility", "power")))
         cluster.pop("amplitude_100", None)
 
 

@@ -27,8 +27,8 @@ class PreparedGridData:
     observed: np.ndarray       # per row
     counts: np.ndarray         # rows per subject
 
-    def predict(self, theta, method, delta_le=None):
-        return predict_ce(self, theta, method, delta_le)
+    def predict(self, theta, method, delta_le=None, utility="power"):
+        return predict_ce(self, theta, method, delta_le, utility)
 
 
 def _payoff(column):

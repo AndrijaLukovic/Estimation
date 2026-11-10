@@ -71,9 +71,31 @@ def _weight(p, method, gamma, beta, palpha):
     return out
 
 
-def predict_ce(data, theta, method, delta_le=None):
+def _cara(z, a):
+    """Vectorized cpt.cara: (1 - exp(-a z)) / a for z >= 0, linear at a = 0."""
+    return z if a == 0 else -np.expm1(-a * z) / a
+
+
+def _cara_inv(v, a):
+    """Vectorized cpt.cara_inv."""
+    return v if a == 0 else -np.log1p(-a * v) / a
+
+
+def _cara_inv_side(value, a, weights, distance, side, side_weight, opposite):
+    """Vectorized cpt.cara_ce inverse for one side of the reference point:
+    1 - a*value is rebuilt from non-negative terms where it would cancel."""
+    if a <= 0:
+        return _cara_inv(value, a)
+    kept = 1 - side_weight + np.sum(np.where(side, weights * np.exp(-a * distance), 0), axis=1) + a * opposite
+    return np.where(a * value > 0.5, -np.log(kept) / a, _cara_inv(value, a))
+
+
+def predict_ce(data, theta, method, delta_le=None, utility="power"):
     """Vectorized CPT certainty equivalent of every conditional state in
-    ``data`` (a prepare.PreparedGridData) under one cluster's parameters."""
+    ``data`` (a prepare.PreparedGridData) under one cluster's parameters.
+    ``utility`` is the spec's utility family (see cpt.u)."""
+    if utility not in ("power", "exponential"):
+        raise ValueError(f"Unknown utility: {utility!r}")
     ix = CANON[method]
     r, ag, al, lam, psi = (theta[ix[k]] for k in ["R", "AG", "AL", "LAM", "PSI"])
     if method == "tk":
@@ -89,10 +111,15 @@ def predict_ce(data, theta, method, delta_le=None):
     pv = np.sum(data.streams * discount, axis=2)
     distance = pv - reference[:, None]
     with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
-        utility = np.where(distance >= 0, np.maximum(distance, 0) ** ag,
-                           -lam * np.maximum(-distance, 0) ** al)
-        order = np.argsort(np.where(data.path_mask, -utility, np.inf), axis=1, kind="stable")
-        u_sorted = np.take_along_axis(utility, order, axis=1)
+        gain, loss = np.maximum(distance, 0), np.maximum(-distance, 0)
+        if utility == "power":
+            u = np.where(distance >= 0, gain ** ag, -lam * loss ** al)
+        else:
+            u = np.where(distance >= 0, _cara(gain, ag), -lam * _cara(loss, al))
+        # Saturated CARA utilities tie in floating point; x - R keeps their rank.
+        rank = u if utility == "power" else distance
+        order = np.argsort(np.where(data.path_mask, -rank, np.inf), axis=1, kind="stable")
+        u_sorted = np.take_along_axis(u, order, axis=1)
         p_sorted = np.take_along_axis(data.probabilities, order, axis=1)
         mask_sorted = np.take_along_axis(data.path_mask, order, axis=1)
         u_sorted = np.where(mask_sorted, u_sorted, 0)
@@ -103,24 +130,47 @@ def predict_ce(data, theta, method, delta_le=None):
         right[:, 0] = 1.0
         left_before = np.column_stack([np.zeros(len(left)), left[:, :-1]])
         right_after = np.column_stack([right[:, 1:], np.zeros(len(right))])
-        gain_weights = (_weight(left, method, gamma, beta, palpha)
-                        - _weight(left_before, method, gamma, beta, palpha))
-        loss_weights = (_weight(right, method, gamma, beta, palpha)
-                        - _weight(right_after, method, gamma, beta, palpha))
+        weight_left, weight_right = (_weight(left, method, gamma, beta, palpha),
+                                     _weight(right, method, gamma, beta, palpha))
+        gain_weights = weight_left - _weight(left_before, method, gamma, beta, palpha)
+        loss_weights = weight_right - _weight(right_after, method, gamma, beta, palpha)
         value = np.sum(u_sorted * np.where(u_sorted > 0, gain_weights, loss_weights), axis=1)
-        ce = reference + np.where(value >= 0, np.maximum(value, 0) ** (1 / ag),
-                                 -(np.maximum(-value, 0) / lam) ** (1 / al))
+        if utility == "power":
+            ce = reference + np.where(value >= 0, np.maximum(value, 0) ** (1 / ag),
+                                     -(np.maximum(-value, 0) / lam) ** (1 / al))
+        else:
+            gains, losses = u_sorted > 0, u_sorted < 0
+            size = np.abs(np.take_along_axis(distance, order, axis=1))
+            gain_value = np.sum(np.where(gains, u_sorted * gain_weights, 0), axis=1)
+            loss_value = -np.sum(np.where(losses, u_sorted * loss_weights, 0), axis=1)
+            # Weight of each side: gains are a prefix and losses a suffix of the
+            # ranked outcomes, and the cumulative weight is exactly 1 at full mass.
+            n_gains, n_losses = gains.sum(axis=1), losses.sum(axis=1)
+            last_gain = np.maximum(n_gains - 1, 0)
+            first_loss = np.minimum(mask_sorted.sum(axis=1) - n_losses, p_sorted.shape[1] - 1)
+            gain_share = np.where(n_gains > 0, np.take_along_axis(weight_left, last_gain[:, None], axis=1)[:, 0], 0)
+            loss_share = np.where(n_losses > 0, np.take_along_axis(weight_right, first_loss[:, None], axis=1)[:, 0], 0)
+            ce = reference + np.where(
+                value >= 0,
+                _cara_inv_side(np.maximum(value, 0), ag, gain_weights, size, gains, gain_share, loss_value),
+                -_cara_inv_side(np.maximum(-value, 0) / lam, al, loss_weights, size, losses, loss_share,
+                                gain_value / lam))
     return ce
 
 
-def scalar_ce(values, reference, lottery, method):
+def scalar_ce(values, reference, lottery, method, utility="power"):
     """CE of one conditional lottery via the scalar CPT reference implementation.
     ``values`` is a named_parameters() dict. Returns (ce, evaluated lottery)."""
     evaluated = cpt.evaluation(
         {"current": lottery}, r=values["r"], R=reference, alpha=values["alpha_gain"],
         alpha_loss=values["alpha_loss"], lamb=values["lambda"], gamma=values.get("gamma", 1),
         beta=values.get("beta", 1), palpha=values.get("palpha", 1), psi=values["psi"],
-        method=method)["current"]
-    ce = cpt.u_inv(evaluated["V"], reference, values["alpha_gain"], values["lambda"],
-                   alpha_loss=values["alpha_loss"])
+        method=method, utility=utility)["current"]
+    if utility == "exponential":
+        ce = cpt.cara_ce(lottery, values["r"], reference, values["alpha_gain"], values["alpha_loss"],
+                         values["lambda"], gamma=values.get("gamma", 1), beta=values.get("beta", 1),
+                         palpha=values.get("palpha", 1), method=method, psi=values["psi"])
+    else:
+        ce = cpt.u_inv(evaluated["V"], reference, values["alpha_gain"], values["lambda"],
+                       alpha_loss=values["alpha_loss"], utility=utility)
     return ce, evaluated
