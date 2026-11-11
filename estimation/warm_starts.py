@@ -54,8 +54,10 @@ def equivalent_result(result, spec):
     return clone
 
 
-def split_starts(result, spec, subjects, scale=.02, bounds=None):
-    """Turn a C-1 class fit into C warm starts by splitting each class in two."""
+def split_starts(result, spec, subjects, scale=.02, bounds=None, label=None):
+    """Turn a C-1 class fit into C warm starts by splitting each class in two,
+    labelled <label>_class<j> (default label split_C<C-1>)."""
+    label = label or f"split_C{spec.C - 1}"
     smaller = initial_values(result, dataclasses.replace(spec, C=spec.C - 1), subjects=subjects, bounds=bounds)
     layout = spec_cluster_layouts(spec)[0][0]
     low, high = np.array(bounds_free(layout, bounds)).T
@@ -64,7 +66,7 @@ def split_starts(result, spec, subjects, scale=.02, bounds=None):
         shift = scale * (high - low) * np.random.default_rng(j).choice([-1., 1.], size=len(vector))
         halves = [np.clip(vector + shift, low, high), np.clip(vector - shift, low, high)]
         pis = np.r_[np.delete(smaller["pis"], j), [smaller["pis"][j] / 2] * 2]
-        starts[f"split_C{spec.C - 1}_class{j + 1}"] = dict(
+        starts[f"{label}_class{j + 1}"] = dict(
             free_vecs=[v for i, v in enumerate(smaller["free_vecs"]) if i != j] + halves,
             pis=pis, ksi=smaller["ksi"].copy())
     return starts
@@ -79,9 +81,12 @@ def job_initializations(spec, subjects, output, fingerprint, warm_dirs=(), legac
       (a restricted model is a feasible start for a broader one, which prevents
       avoidable nested-model LL reversals);
     - Test 1: the nested Test 3 fit for C=4, and every class of the C-1 fit split
-      in two for C>=2 (so C cannot end below C-1), from this run or a warm directory.
+      in two for C>=2 (so C cannot end below C-1), from this run and from every
+      warm directory: the first fit found keeps the plain label (nested_<id>,
+      split_C<C-1>_class<j>), the others add their directory name.
 
-    Sources that lack target participants or do not fit the layout are skipped."""
+    Sources that lack target participants or do not fit the layout are skipped,
+    and so is a start identical to an earlier one."""
     cid = spec.config_id()
     starts = {}
 
@@ -94,13 +99,17 @@ def job_initializations(spec, subjects, output, fingerprint, warm_dirs=(), legac
     def project(label, source):
         add(label, lambda: {label: initial_values(source, spec, subjects=subjects, bounds=bounds)})
 
-    def find(config_id):
-        """Fit of config_id from this run, else from the first warm directory that has it."""
+    def find_all(config_id):
+        """(tag, fit) of config_id in this run (tag "") and in each warm directory
+        (tag: its name); the first one found gets the tag "" instead."""
+        found = []
         result = load_completed(output, config_id, fingerprint)
+        if result is not None:
+            found.append(("", result))
         for warm_dir in warm_dirs:
-            if result is None and (warm_dir / config_id / "result.pkl").exists():
-                result = load_pickle(warm_dir / config_id / "result.pkl")
-        return result
+            if (warm_dir / config_id / "result.pkl").exists():
+                found.append(("" if not found else warm_dir.name, load_pickle(warm_dir / config_id / "result.pkl")))
+        return found
 
     if legacy_dir is not None:
         legacy_ids = [cid] + ([cid.replace("_commem_", "_sepmem_")] if spec.rp_mode != "mixed" else [])
@@ -126,11 +135,27 @@ def job_initializations(spec, subjects, output, fingerprint, warm_dirs=(), legac
             project("corrected_" + source_id, source)
     if spec.test == "test1" and spec.C == 4:
         test3_id = dataclasses.replace(spec, test="test3", rp_mode="fixed_4").config_id()
-        nested = find(test3_id)
-        if nested is not None:
-            project("nested_" + test3_id, nested)
+        for tag, nested in find_all(test3_id):
+            project("_".join(filter(None, ["nested", test3_id, tag])), nested)
     if spec.test == "test1" and spec.C >= 2:
-        smaller = find(dataclasses.replace(spec, C=spec.C - 1).config_id())
-        if smaller is not None:
-            add(f"split_C{spec.C - 1}", lambda: split_starts(smaller, spec, subjects, bounds=bounds))
-    return starts
+        for tag, smaller in find_all(dataclasses.replace(spec, C=spec.C - 1).config_id()):
+            label = "_".join(filter(None, [f"split_C{spec.C - 1}", tag]))
+            add(label, lambda smaller=smaller, label=label: split_starts(smaller, spec, subjects, bounds=bounds,
+                                                                         label=label))
+    return drop_duplicate_starts(starts)
+
+
+def drop_duplicate_starts(starts):
+    """Starts (label -> initial values) without exact repeats of an earlier one."""
+    kept = {}
+    for label, values in starts.items():
+        same = next((other for other, seen in kept.items()
+                     if len(seen["free_vecs"]) == len(values["free_vecs"])
+                     and all(np.array_equal(a, b) for a, b in zip(seen["free_vecs"], values["free_vecs"]))
+                     and np.array_equal(seen["pis"], values["pis"]) and np.array_equal(seen["ksi"], values["ksi"])),
+                    None)
+        if same is None:
+            kept[label] = values
+        else:
+            print(f"  SKIP warm start {label}: identical to {same}", flush=True)
+    return kept

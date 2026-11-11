@@ -9,6 +9,7 @@ import pandas as pd
 
 from estimation.data import exclusions
 from estimation.jobs import generate_jobs, select_jobs, spec_from_config_id
+from estimation.spec import ModelSpec, spec_cluster_layouts
 from estimation.store import write_protocol
 from scripts.run_grid import chosen_jobs, main, parse_args
 
@@ -38,11 +39,25 @@ class SelectJobsTests(unittest.TestCase):
         alias = [cid for cid, _ in select_jobs(only=["test2_qh_sepalpha_sepmem_prelec_cara_LE"])]
         self.assertEqual(alias, ["test2_qh_sepalpha_commem_prelec_cara_LE", "test2_qh_sepalpha_sepmem_prelec_cara_LE"])
 
+    def test_test3_with_other_pinned_types_round_trips(self):
+        spec = spec_from_config_id("test3_exp_sepalpha_commem_tk_cara_SQ-PA-FE-FE")
+        self.assertEqual((spec.rp_set, spec.utility), (("SQ", "PA", "FE", "FE"), "exponential"))
+        layouts, identities = spec_cluster_layouts(spec)
+        self.assertEqual(identities, ["SQ", "PA", "FE", "FE"])
+        usual = spec_cluster_layouts(spec_from_config_id("test3_exp_sepalpha_commem_tk_cara"))[0]
+        self.assertEqual([len(layout.free_positions) for layout in layouts],
+                         [len(layout.free_positions) for layout in usual[:2]] + [len(usual[3].free_positions)] * 2)
+        default = ModelSpec("test3", "exp", "sepalpha", "commem", "tk", "fixed_4", 4, rp_set=("SQ", "PA", "LE", "FE"))
+        self.assertEqual(default, spec_from_config_id("test3_exp_sepalpha_commem_tk"))
+        with self.assertRaises(ValueError):
+            ModelSpec("test1", "exp", "sepalpha", "commem", "tk", "mixed", 4, rp_set=("SQ", "PA", "FE", "FE"))
+
     def test_malformed_config_ids_are_rejected(self):
         for cid in ["test3_exp_sepalpha_commem_tk_C4", "test1_exp_sepalpha_commem_tk", "test2_exp_sepalpha_commem_tk_XX",
                     "test1_exp_sepalpha_commem_tk_C0", "test4_exp_sepalpha_commem_tk", "test3_exp_wrong_commem_tk",
                     "test3_exp_sepalpha_commem_tk_cara_cara", "test3_exp_sepalpha_commem_cara_tk",
-                    "test1_exp_sepalpha_commem_tk_C4_cara"]:
+                    "test1_exp_sepalpha_commem_tk_C4_cara", "test3_exp_sepalpha_commem_tk_SQ-PA-LE-FE",
+                    "test3_exp_sepalpha_commem_tk_SQ-PA-XX-FE", "test3_exp_sepalpha_commem_tk_SQ-PA-FE"]:
             with self.subTest(cid=cid), self.assertRaises(ValueError):
                 spec_from_config_id(cid)
 

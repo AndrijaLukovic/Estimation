@@ -141,6 +141,15 @@ def protocol_section(run, protocol, models):
         tolerance = f"; max_iter {protocol['max_iter']}, tol {protocol['tol']:g}" if "max_iter" in protocol else ""
         warm = " + warm starts" if any(model["meta"].get("n_warm_starts") for model in models) else ""
         rows.append(["Starts", f"{seeds} random per model{warm}{tolerance}"])
+        if protocol.get("alpha_logunif_seeds"):
+            rows.append(["", f"{len(protocol['alpha_logunif_seeds'])} of the random starts draw CARA alpha "
+                             "log-uniformly"])
+        if protocol.get("screening"):
+            rows.append(["", f"random starts screened after {protocol['screening']['iter']} EM iterations; "
+                             f"best {protocol['screening']['keep']:.0%} continued"])
+        if protocol.get("reuse_restarts"):
+            rows.append(["", "finished random starts copied from "
+                             + display_path(protocol["reuse_restarts"]["directory"])])
     for index, directory in enumerate(protocol.get("warm_dirs", [])):
         rows.append(["Warm-start dirs" if index == 0 else "", display_path(directory)])
     version = protocol.get("valuation_version") or protocol.get("inputs", {}).get("valuation_version") \
@@ -165,10 +174,29 @@ def protocol_section(run, protocol, models):
     return lines + table(rows, left=(0, 1))
 
 
-def restart_hits(result):
+def restart_hits(result, tol=HIT_TOL):
+    """(hits, finished) over the finished random starts: how many reach the best
+    fit within ``tol`` log-lik. Independent replications of the best fit (Hipp &
+    Bauer 2006); warm starts and screened-out random starts do not count."""
     lls = [row["log_likelihood"] for row in result.get("restart_summaries", [])
-           if row.get("log_likelihood") is not None and np.isfinite(row["log_likelihood"])]
-    return (sum(ll >= max(lls) - HIT_TOL for ll in lls), len(lls)) if lls else None
+           if row.get("seed") is not None and row.get("stage") != "screened_out"
+           and row.get("log_likelihood") is not None and np.isfinite(row["log_likelihood"])]
+    return (sum(ll >= result["log_likelihood"] - tol for ll in lls), len(lls)) if lls else None
+
+
+def start_design(meta, result):
+    """Random and warm starts of one fit, with screening when used."""
+    if meta.get("n_random_restarts") is None:
+        return None
+    text = f"{meta['n_random_restarts']} random"
+    if meta.get("n_logunif_alpha"):
+        text += f" ({meta['n_logunif_alpha']} log-uniform alpha)"
+    text += f" + {meta['n_warm_starts']} warm"
+    screen = result.get("screen")
+    if screen:
+        text += (f"; random starts screened after {screen['iter']} iterations, best {screen['keep']:.0%} "
+                 f"({screen['n_kept']}) continued, {result.get('n_screened_out', 0)} stopped")
+    return text
 
 
 def fit_section(models):
@@ -187,14 +215,15 @@ def fit_section(models):
                      big(meta["bic"]), "*" if meta["bic"] == best[meta["test"]] else "",
                      big(meta["bic"] - lowest), num(np.median(result["ksi"])), meta.get("exit_reason") or
                      ("converged" if meta.get("converged") else "not converged"), meta.get("n_iter", "-"),
-                     f"{hits[0]}/{hits[1]}" if hits else "-",
+                     f"{hits[0]}/{hits[1]}" + ("!" if hits[0] < 2 else "") if hits else "-",
                      f"{meta['elapsed_seconds'] / 60:.1f}" if meta.get("elapsed_seconds") is not None else "-",
                      f"alias of {meta['equivalent_to']}" if meta.get("equivalent_to") else ""])
     return (["MODEL FIT"]
             + table(rows, left=(0, 4, 7, 11))
             + [f"  k: structural parameters + mixing weights; the {n_subjects:,} noise parameters ksi_i also enter "
                "the BIC.", "  *: lowest BIC of its test. dBIC: from the lowest BIC in this run. "
-               f"Hits: restarts within {HIT_TOL} log-lik. of the best restart / restarts finished. Min: minutes."])
+               f"Hits: finished random starts within {HIT_TOL} log-lik. of the best fit / finished random starts "
+               "(! fewer than 2: the best fit is not replicated). Min: minutes."])
 
 
 def comparison_section(models):
@@ -314,14 +343,14 @@ def model_section(model, models_by_id, bounds_of):
                  f"k {meta['k_params'] - n_subjects} + {n_subjects:,} ksi, n {meta['n_obs']:,}; "
                  f"{meta.get('exit_reason') or ('converged' if meta.get('converged') else 'not converged')} "
                  f"after {meta.get('n_iter', '?')} EM iterations")
-    starts = [f"{meta['n_random_restarts']} random + {meta['n_warm_starts']} warm"
-              if meta.get("n_random_restarts") is not None else None,
+    starts = [start_design(meta, result),
               f"{meta['n_restarts_ok']} finished" if meta.get("n_restarts_ok") is not None else None,
               f"{meta['n_converged']} converged" if meta.get("n_converged") is not None else None,
               f"best from {result['restart_id']}" if result.get("restart_id") else None]
-    hits = restart_hits(result)
+    hits, near = restart_hits(result), restart_hits(result, 0.1)
     if hits:
-        starts.append(f"{hits[0]} within {HIT_TOL} log-lik. of the best")
+        starts.append(f"random starts within {HIT_TOL} / 0.1 log-lik. of the best: {hits[0]} / {near[0]} "
+                      f"of {hits[1]}" + ("  (best fit not replicated)" if hits[0] < 2 else ""))
     if any(starts):
         lines.append("  Starts: " + ", ".join(item for item in starts if item))
     ksi = np.asarray(result["ksi"], dtype=float)

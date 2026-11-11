@@ -47,8 +47,9 @@ def generate_jobs():
 
 
 def spec_from_config_id(config_id):
-    """Inverse of ModelSpec.config_id(), e.g. test1_exp_sepalpha_commem_tk_C5 or
-    test1_exp_sepalpha_commem_tk_cara_C5 (exponential utility)."""
+    """Inverse of ModelSpec.config_id(), e.g. test1_exp_sepalpha_commem_tk_C5,
+    test1_exp_sepalpha_commem_tk_cara_C5 (exponential utility) or
+    test3_exp_sepalpha_commem_tk_cara_SQ-PA-FE-FE (Test 3 with other pinned types)."""
     parts = config_id.split("_")
     utility = "power"
     tags = {tag: name for name, tag in UTILITY_TAGS.items()}
@@ -61,8 +62,12 @@ def spec_from_config_id(config_id):
             raise ValueError(f"{config_id}: {name} must be one of {allowed}")
     base = dict(zip(["test", *CHOICES], parts[:5]), utility=utility)
     tail = parts[5] if len(parts) == 6 else None
+    rp_set = tuple(tail.split("-")) if tail and "-" in tail else None
     if base["test"] == "test3" and tail is None:
         spec = ModelSpec(rp_mode="fixed_4", C=4, **base)
+    elif base["test"] == "test3" and rp_set and len(rp_set) == 4 and set(rp_set) <= set(RP_LABELS_4) \
+            and rp_set != tuple(RP_LABELS_4):
+        spec = ModelSpec(rp_mode="fixed_4", C=4, rp_set=rp_set, **base)
     elif base["test"] == "test2" and tail in RP_LABELS_4:
         spec = ModelSpec(rp_mode="fixed_pure", C=1, rp_identity=tail, **base)
     elif base["test"] == "test1" and tail and tail[0] == "C" and tail[1:].isdigit() and int(tail[1:]) >= 1:
@@ -84,7 +89,8 @@ def _estimation_order(job):
     test_rank = {"test3": 0, "test1": 1, "test2": 2}
     _, spec = job
     return (test_rank[spec.test], priority.index((spec.discounting, spec.curvature, spec.pw)),
-            0 if spec.memory == "commem" else 1, spec.C, spec.rp_identity or "")
+            0 if spec.memory == "commem" else 1, spec.C, spec.rp_identity or "",
+            "-".join(getattr(spec, "rp_set", None) or ()))
 
 
 def select_jobs(tests=TESTS, discounting=CHOICES["discounting"], curvature=CHOICES["curvature"],

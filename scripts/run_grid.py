@@ -26,7 +26,16 @@ is added automatically.
 
 Warm starts: the original unconditional fit (results/legacy_unconditional), the same model in
 --warm-dirs, the closest models already fitted in this run, the nested Test 3
-fit for Test 1 C=4 and the split C-1 fit for Test 1 C>=2.
+fit for Test 1 C=4 and the split C-1 fits for Test 1 C>=2 (this run's and every
+warm directory's).
+
+Random starts: --seeds per model (the first 100 are config.SEEDS). With CARA,
+--logunif-alpha N of them (the last N) draw alpha log-uniformly instead of near
+zero. --screen-iter K --screen-keep F runs every random start K EM iterations
+and continues only the share F with the highest log-likelihood (warm starts
+always run to the end). --reuse-restarts DIR copies the random starts already
+finished in an earlier run of the same protocol instead of re-estimating them.
+summary.txt reports how many finished random starts reach the best fit.
 
 Output: a folder per model (result.pkl, meta.json), summary.csv, summary.txt
 (readable fit table and class parameters, see scripts/summarize_run.py) and
@@ -37,21 +46,23 @@ command resumes from checkpoints. Changing any of those inputs needs a new
 --output-dir. TK weighting is monotone only for gamma >= 0.2792.
 """
 import argparse
+import json
 from pathlib import Path
 import sys
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from estimation.config import BOUNDS, LEGACY_RESULTS, LOTTERIES, MAX_ITER, SEEDS, TOL  # noqa: E402
+from estimation.config import ALL_SEEDS, BOUNDS, LEGACY_RESULTS, LOTTERIES, MAX_ITER, SEEDS, TOL, random_seeds  # noqa: E402
 from estimation.data import exclude_participants, exclusions, observed_ce  # noqa: E402
 from estimation.jobs import CHOICES, TESTS, select_jobs  # noqa: E402
 from estimation.lottery_paths import transform  # noqa: E402
 from estimation.multistart import grid_em_multistart  # noqa: E402
 from estimation.run_summary import write_run_summary  # noqa: E402
 from estimation.spec import CANON, RP_LABELS_4, UTILITIES, default_bounds, replace_bound  # noqa: E402
-from estimation.store import (load_completed, save_model, scientific_inputs, seal_protocol,  # noqa: E402
-                              sha256_bytes, sha256_file, snapshot_sources, write_protocol, write_summary)
+from estimation.store import (load_completed, protocol_differences, save_model, scientific_inputs,  # noqa: E402
+                              seal_protocol, sha256_bytes, sha256_file, snapshot_sources, write_protocol,
+                              write_summary)
 from estimation.warm_starts import equivalent_result, job_initializations  # noqa: E402
 
 FILTERS = ["tests", "discounting", "curvature", "memory", "pw", "clusters", "rp"]
@@ -78,6 +89,12 @@ def parse_args(argv=None):
     search.add_argument("--gamma-lower", type=float, help="Lower TK gamma bound (default: config)")
     search.add_argument("--warm-dirs", type=Path, nargs="+", default=[], help="Saved fits of the same models")
     search.add_argument("--seeds", type=int, default=len(SEEDS), help="Random starts per model")
+    search.add_argument("--logunif-alpha", type=int, default=0, metavar="N",
+                        help="CARA only: the last N random starts draw alpha log-uniformly")
+    search.add_argument("--screen-iter", type=int, metavar="K", help="Screen random starts after K EM iterations")
+    search.add_argument("--screen-keep", type=float, metavar="SHARE", help="Share of screened starts continued")
+    search.add_argument("--reuse-restarts", type=Path, metavar="DIR",
+                        help="Earlier run of the same protocol whose finished random starts are copied")
     search.add_argument("--n-workers", type=int, default=24)
     search.add_argument("--max-iter", type=int, default=MAX_ITER)
     search.add_argument("--tol", type=float, default=TOL)
@@ -91,11 +108,39 @@ def parse_args(argv=None):
         parser.error("--clusters must be positive")
     if args.exclude_endpoint is not None and not 0 < args.exclude_endpoint <= 1:
         parser.error("--exclude-endpoint is a share in (0, 1]")
-    if not 1 <= args.seeds <= len(SEEDS):
-        parser.error(f"--seeds must be between 1 and {len(SEEDS)}")
+    if not 1 <= args.seeds <= len(ALL_SEEDS):
+        parser.error(f"--seeds must be between 1 and {len(ALL_SEEDS)}")
+    if not 0 <= args.logunif_alpha <= args.seeds:
+        parser.error("--logunif-alpha must be between 0 and --seeds")
+    if (args.screen_iter is None) != (args.screen_keep is None):
+        parser.error("--screen-iter and --screen-keep go together")
+    if args.screen_iter is not None and not (1 <= args.screen_iter < args.max_iter and 0 < args.screen_keep <= 1):
+        parser.error("--screen-iter must be in [1, --max-iter) and --screen-keep in (0, 1]")
     if args.output_dir is None and not args.list:
         parser.error("--output-dir is required (use a new directory for a new sample, bounds or warm starts)")
     return args
+
+
+# Protocol entries that must agree before restarts of another run are copied
+# (the starts themselves are matched by seed and alpha draw).
+REUSE_KEYS = ("inputs", "sample_filters", "max_iter", "tol", "utility", "reference_basis", "time_origin",
+              "noise_scale")
+
+
+def reused_protocol(directory):
+    path = directory / "run_protocol.json"
+    if not path.exists():
+        raise ValueError(f"--reuse-restarts: no run_protocol.json in {directory}")
+    return dict(directory=str(directory), fingerprint=json.loads(path.read_text())["fingerprint"])
+
+
+def check_reuse(directory, protocol):
+    """Refuse to copy restarts estimated under different inputs or tolerances."""
+    old = json.loads((directory / "run_protocol.json").read_text())
+    differences = protocol_differences({key: old.get(key) for key in REUSE_KEYS},
+                                       {key: protocol.get(key) for key in REUSE_KEYS})
+    if differences:
+        raise ValueError(f"--reuse-restarts {directory} has a different protocol: {', '.join(differences)}")
 
 
 def write_summaries(output):
@@ -125,6 +170,8 @@ def main(argv=None):
     if len(utilities) != 1:
         raise SystemExit(f"Estimate one utility per output directory, not {utilities}")
     utility = utilities[0]
+    if args.logunif_alpha and utility != "exponential":
+        raise SystemExit("--logunif-alpha draws CARA alpha: it needs --utility exponential")
     bounds = default_bounds(utility)
     if args.lambda_upper is not None:
         bounds = replace_bound("LAM", "high", args.lambda_upper, bounds)
@@ -157,7 +204,13 @@ def main(argv=None):
     if output == LEGACY_RESULTS.resolve() or output in [path.resolve() for path in args.warm_dirs]:
         raise ValueError("Write to a new directory: the output may not be the legacy grid or a warm directory")
     output.mkdir(exist_ok=True)
-    seeds = SEEDS[:args.seeds]
+    seeds = random_seeds(args.seeds)
+    logunif_seeds = seeds[len(seeds) - args.logunif_alpha:] if args.logunif_alpha else []
+    reuse = None
+    if args.reuse_restarts is not None:
+        reuse = args.reuse_restarts.resolve()
+        if reuse == output:
+            raise ValueError("--reuse-restarts must name another run directory")
     protocol = seal_protocol(dict(
         inputs=scientific_inputs(observed, bounds),
         sample_filters=dict(exclude_endpoint=args.exclude_endpoint,
@@ -169,8 +222,14 @@ def main(argv=None):
         time_origin="current decision, next payment delay 1", noise_scale="original full-lottery spread",
         memory_equivalence="pure-reference sepmem models are labelled aliases of their commem fit",
         # Power-utility protocols predate this key; leaving it out keeps their fingerprints.
-        **({} if utility == "power" else dict(utility=utility))))
+        **({} if utility == "power" else dict(utility=utility)),
+        # Likewise the random-start options, recorded only when used.
+        **(dict(alpha_logunif_seeds=list(map(int, logunif_seeds))) if logunif_seeds else {}),
+        **(dict(screening=dict(iter=args.screen_iter, keep=args.screen_keep)) if args.screen_iter else {}),
+        **(dict(reuse_restarts=reused_protocol(reuse)) if reuse else {})))
     fingerprint = protocol["fingerprint"]
+    if reuse:
+        check_reuse(reuse, protocol)
     write_protocol(output, protocol)
     snapshot_sources(output, [__file__])
     if len(dropped):
@@ -196,7 +255,10 @@ def main(argv=None):
         started = time.time()
         result = grid_em_multistart(spec, seeds, y=observed, lotteries=lotteries, max_iter=args.max_iter,
                                     tol=args.tol, n_workers=args.n_workers, initializations=initializations,
-                                    checkpoint_dir=output / cid / "restarts", verbose=args.verbose, bounds=bounds) #main estimation function
+                                    checkpoint_dir=output / cid / "restarts", verbose=args.verbose, bounds=bounds,
+                                    logunif_seeds=logunif_seeds, screen_iter=args.screen_iter,
+                                    screen_keep=args.screen_keep,
+                                    reuse_dir=reuse / cid / "restarts" if reuse else None) #main estimation function
         if excluded:
             result["excluded_participants"] = excluded
         meta = save_model(output, spec, result, len(valid), time.time() - started, fingerprint)

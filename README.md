@@ -52,6 +52,7 @@ tests/                 python -m unittest
 | 或直接点名 | `--only test3_exp_sepalpha_commem_tk test1_exp_sepalpha_commem_tk_C4` | |
 
 边界与起点：`--lambda-upper`、`--gamma-lower`（TK 在 γ ≥ 0.2792 时单调）、`--warm-dirs`。
+随机起点：`--seeds N`（默认 100，前 100 个即 `config.SEEDS`，更多时依次追加互不重复的 seed）；CARA 下 `--logunif-alpha M` 让最后 M 个起点的 α 按对数尺度均匀抽（|α| 从 1e-4 到边界，正负各半），其余仍为 N(0, 0.003)；`--screen-iter K --screen-keep F` 先让每个随机起点跑 K 次 EM 迭代，只把 LL 最高的比例 F 接着跑到收敛（接着跑与一次跑完的计算相同；warm start 总是跑完）；`--reuse-restarts 目录` 复制同一协议下另一 run 已跑完的随机起点。summary.txt 的 Hits 只数跑完的随机起点中达到最优 LL 的个数，少于 2 时标 `!`（最优解未被独立重复）。
 先用 `--list` 查看样本与模型清单，不会估计。
 
 ```bash

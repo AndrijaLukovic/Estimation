@@ -59,6 +59,18 @@ TOL = 1e-6
 N_SEEDS = 100
 MASTER_SEED = 42
 SEEDS = np.random.default_rng(MASTER_SEED).integers(0, 10000, size=N_SEEDS).tolist()
+# More random starts continue SEEDS with further distinct seeds, in a fixed order,
+# so a run with n starts uses the first n and every saved restart keeps its seed.
+_EXTRA_SEEDS = [int(seed) for seed in np.random.default_rng(MASTER_SEED + 1).choice(1_000_000, size=10_000, replace=False)
+                if seed not in set(SEEDS)]
+ALL_SEEDS = SEEDS + _EXTRA_SEEDS[:9_900]
+
+
+def random_seeds(n):
+    """The first n random-start seeds (all distinct; the first 100 are SEEDS)."""
+    if not 1 <= n <= len(ALL_SEEDS):
+        raise ValueError(f"Between 1 and {len(ALL_SEEDS)} random starts, not {n}")
+    return ALL_SEEDS[:n]
 
 # R^SQ in the composite reference point:
 #   "zt"   : R^SQ(t) = Z_t  (accumulated realized payoffs)

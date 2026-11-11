@@ -3,7 +3,7 @@
 Main results: exp/sepalpha/commem/TK after excluding top-endpoint responders
 (results/sample_stricter_no_endpoint/tk_lam20_g028_main; scripts/run_grid.py --exclude-endpoint 0.5).
 CARA slides (results_cara.tex): the same sample and protocol with exponential utility
-(results/sample_stricter_no_endpoint/cara_sepalpha_tk_wide).
+(Test 3 and Test 1 C=4 from the 500-start rerun results/sample_stricter_no_endpoint/cara_sepalpha_tk_wide_s500).
 Backup profile figures: full sample, Prelec.
 
     python slides/make_figures.py                 # PDF figures into slides/figures
@@ -30,7 +30,7 @@ from estimation.config import RESULTS  # noqa: E402
 from estimation.spec import CANON  # noqa: E402
 
 MAIN = RESULTS / "sample_stricter_no_endpoint" / "tk_lam20_g028_main"
-CARA = RESULTS / "sample_stricter_no_endpoint" / "cara_sepalpha_tk_wide"
+CARA = RESULTS / "sample_stricter_no_endpoint" / "cara_sepalpha_tk_wide_s500"
 PROFILES = RESULTS / "sample_stricter" / "profiles" / "grid" / "test3_exp_sepalpha_commem_prelec"
 BLUE, ORANGE, INK, MUTED, GRID, SHADE = "#2a78d6", "#eb6834", "#0b0b0b", "#52514e", "#e4e3de", "#f0efec"
 TYPE_COLORS = dict(SQ=BLUE, PA=ORANGE, LE="#1baf7a", FE="#eda100")   # fixed per type, categorical slots 1-4

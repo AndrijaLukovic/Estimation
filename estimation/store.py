@@ -179,6 +179,8 @@ def save_model(output, spec, result, n_obs, elapsed, fingerprint):
         exit_reason=result["exit_reason"], n_iter=result["n_iter"],
         n_restarts_ok=result.get("n_restarts_ok"), n_converged=result.get("n_converged"),
         n_random_restarts=result.get("n_random_restarts"), n_warm_starts=result.get("n_warm_starts"),
+        n_logunif_alpha=result.get("n_logunif_alpha"), n_screened_out=result.get("n_screened_out"),
+        screen=result.get("screen"),
         seeds_used=list(map(int, result["seeds_used"])), elapsed_seconds=elapsed,
         pis=list(map(float, result["pis"])), rp_identities=result["rp_identities"],
         equivalent_to=result.get("equivalent_to"),

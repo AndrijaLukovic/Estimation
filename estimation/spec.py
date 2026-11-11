@@ -20,6 +20,7 @@ Plus a reference-point mode, orthogonal to the factorial above:
     rp_mode     : "mixed"       — a1,a2,a3 estimated per cluster (simplex), Test 1
                   "fixed_pure"  — one RP identity gets weight 1, C=1, Test 2
                   "fixed_4"     — C=4, cluster j permanently = RP identity j, Test 3
+                                  (rp_set: other pinned labels, e.g. SQ-PA-FE-FE)
 
 Per cluster, a ClusterLayout says which positions of the canonical parameter
 vector are free (optimized) vs. pinned/linked; expand_free() maps the reduced
@@ -74,6 +75,18 @@ class ModelSpec:
     C: int                # number of clusters
     rp_identity: str = None   # only for rp_mode == "fixed_pure": "SQ"|"PA"|"LE"|"FE"
     utility: str = "power"    # "power" | "exponential"; pickles without it are power
+    # Only for rp_mode == "fixed_4": the pinned label of each of the four types when
+    # it differs from RP_LABELS_4 (a label may repeat, e.g. SQ-PA-FE-FE). None is
+    # the usual Test 3; pickles without it are the usual Test 3.
+    rp_set: tuple = None
+
+    def __post_init__(self):
+        if self.rp_set is None:
+            return
+        rp_set = tuple(self.rp_set)
+        if self.rp_mode != "fixed_4" or len(rp_set) != 4 or any(rp not in RP_LABELS_4 for rp in rp_set):
+            raise ValueError(f"rp_set needs rp_mode fixed_4 and four labels from {RP_LABELS_4}: {self.rp_set!r}")
+        object.__setattr__(self, "rp_set", None if rp_set == tuple(RP_LABELS_4) else rp_set)
 
     def config_id(self):
         if self.utility not in UTILITIES:
@@ -86,7 +99,7 @@ class ModelSpec:
         elif self.rp_mode == "fixed_pure":
             return f"{tag}_{self.rp_identity}"
         elif self.rp_mode == "fixed_4":
-            return tag
+            return tag if self.rp_set is None else f"{tag}_{'-'.join(self.rp_set)}"
         raise ValueError(f"Unknown rp_mode: {self.rp_mode!r}")
 
 
@@ -208,8 +221,8 @@ def spec_cluster_layouts(spec: ModelSpec):
                 [spec.rp_identity])
     elif spec.rp_mode == "fixed_4":
         assert spec.C == 4, "fixed_4 rp_mode always has C=4"
-        return ([build_cluster_layout(spec, rp_identity=lbl) for lbl in RP_LABELS_4],
-                list(RP_LABELS_4))
+        labels = list(getattr(spec, "rp_set", None) or RP_LABELS_4)
+        return [build_cluster_layout(spec, rp_identity=lbl) for lbl in labels], labels
     raise ValueError(f"Unknown rp_mode: {spec.rp_mode!r}")
 
 
@@ -271,6 +284,11 @@ _BASE_NOISE = {
 }
 _DELTA_LE_BASE_NOISE = (1.0, 0.05)   # same base/noise as the DELTA slot
 _CARA_BASE_NOISE = (0.0, 0.003)      # AG and AL under exponential utility
+# Random-start draws of CARA alpha: "normal" is _CARA_BASE_NOISE; "logunif" is a
+# random sign times |alpha| = 10^U(log10 LOGUNIF_ALPHA_MIN, log10 bound), so starts
+# spread evenly over the decades from near-linear utility to the bound.
+ALPHA_INITS = ("normal", "logunif")
+LOGUNIF_ALPHA_MIN = 1e-4
 
 
 def default_bounds(utility="power"):
@@ -315,12 +333,18 @@ def bounds_free(layout: ClusterLayout, bounds=None):
     return b
 
 
-def init_free(layout: ClusterLayout, rng: np.random.Generator, bounds=None):
+def init_free(layout: ClusterLayout, rng: np.random.Generator, bounds=None, alpha_init="normal"):
     """Draw an initial reduced vector: typical CPT values plus noise, clipped to
     bounds, restricted to free positions. s1,s2,s3 (when free/mixed) are
-    sampled in a-space near 0 and converted to s-space."""
+    sampled in a-space near 0 and converted to s-space. alpha_init="logunif"
+    (exponential utility only) redraws both alphas log-uniformly (ALPHA_INITS);
+    the default draw is unchanged by the option."""
     from .valuation import a_to_s   # local import: valuation imports this module
 
+    if alpha_init not in ALPHA_INITS:
+        raise ValueError(f"Unknown alpha_init {alpha_init!r}: one of {ALPHA_INITS}")
+    if alpha_init != "normal" and layout.utility != "exponential":
+        raise ValueError(f"alpha_init={alpha_init!r} needs exponential utility")
     idx = CANON[layout.method]
     base, noise = _BASE_NOISE[layout.method]
     if layout.utility == "exponential":
@@ -329,6 +353,14 @@ def init_free(layout: ClusterLayout, rng: np.random.Generator, bounds=None):
     lo = np.array([b[0] for b in _base_bounds(layout, bounds)], dtype=float)
     hi = np.array([b[1] for b in _base_bounds(layout, bounds)], dtype=float)
     full = np.clip(base + rng.standard_normal(len(base)) * noise, lo, hi)
+    if alpha_init == "logunif":
+        for name in ("AG", "AL"):
+            position = idx[name]
+            sign = rng.choice([-1., 1.])
+            limit = hi[position] if sign > 0 else -lo[position]
+            magnitude = (10 ** rng.uniform(np.log10(LOGUNIF_ALPHA_MIN), np.log10(limit))
+                         if limit > LOGUNIF_ALPHA_MIN else max(limit, 0.) * rng.uniform())
+            full[position] = np.clip(sign * magnitude, lo[position], hi[position])
 
     s_positions = {idx["S1"], idx["S2"], idx["S3"]}
     if s_positions.issubset(set(layout.free_positions)):

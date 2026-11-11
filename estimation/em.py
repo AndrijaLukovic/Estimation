@@ -23,9 +23,14 @@ from .store import atomic_write_text
 def grid_em_mixture(spec: ModelSpec, y=None, lotteries=None,
                     max_iter=MAX_ITER, tol=TOL, seed=None,
                     verbose=False, initial_values=None, prepared=None,
-                    progress_path=None, bounds=None, layouts=None, free_bounds=None):
+                    progress_path=None, bounds=None, layouts=None, free_bounds=None,
+                    alpha_init="normal"):
     """One EM run for ``spec``.
 
+    initial_values : free_vecs, pis, ksi to start from instead of a random draw;
+                  with prev_ll (the log-likelihood one iteration earlier) a saved
+                  run continues as if it had not stopped (multistart screening).
+    alpha_init  : random draw of CARA alpha (spec.ALPHA_INITS).
     bounds      : bound table for initial draws and default free bounds (None: config.BOUNDS).
     layouts     : cluster layouts replacing spec_cluster_layouts(spec), e.g. with
                   a profiled parameter pinned.
@@ -52,7 +57,7 @@ def grid_em_mixture(spec: ModelSpec, y=None, lotteries=None,
 
     rng = np.random.default_rng(seed)
     pis = np.ones(c) / c
-    free_vecs = [init_free(layouts[j], rng, bounds) for j in range(c)]
+    free_vecs = [init_free(layouts[j], rng, bounds, alpha_init) for j in range(c)]
     ksi = np.ones(n) * 0.1
     if initial_values is not None:
         free_vecs = [np.asarray(vector, dtype=float).copy() for vector in initial_values["free_vecs"]]
@@ -66,6 +71,8 @@ def grid_em_mixture(spec: ModelSpec, y=None, lotteries=None,
         ksi = np.clip(ksi, *KSI_BOUNDS)
 
     prev_ll = -np.inf
+    if initial_values is not None and initial_values.get("prev_ll") is not None:
+        prev_ll = float(initial_values["prev_ll"])
     ll = prev_ll
     iter_log = []
     optimizer_log = []
